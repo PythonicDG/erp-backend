@@ -1,4 +1,5 @@
 from rest_framework import status, viewsets, permissions
+from rest_framework.decorators import action
 from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -7,27 +8,29 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
-from .models import User
+from .models import User, Notification
 from .system_models import SystemConfiguration, CompanyProfile, AuditLog
 from .serializers import (
     LoginSerializer, UserSerializer, TeamMemberSerializer,
-    CompanyProfileSerializer, AuditLogSerializer
+    CompanyProfileSerializer, AuditLogSerializer, NotificationSerializer
 )
 
-class IsAdminRole(permissions.BasePermission):
-    """Permission check for users with ADMIN role."""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == 'ADMIN'
+from .mixins import AuditLogMixin
+from .permissions import IsAdmin
 
-class TeamViewSet(viewsets.ModelViewSet):
+class TeamViewSet(AuditLogMixin, viewsets.ModelViewSet):
     """
     ViewSet for managing team members (Admins only).
     """
     queryset = User.objects.all().order_by('-created_at')
     serializer_class = TeamMemberSerializer
-    permission_classes = [IsAdminRole]
+    permission_classes = [IsAdmin]
     filterset_fields = ['role', 'is_active', 'department']
     search_fields = ['first_name', 'last_name', 'email', 'employee_id']
+    audit_module = "Team"
+
+    def get_audit_target(self, instance):
+        return f"{instance.full_name} ({instance.employee_id})"
 
 
 class LoginView(GenericAPIView):
@@ -217,6 +220,13 @@ class CompanyProfileView(GenericAPIView):
         serializer = self.get_serializer(profile, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            from .utils import log_action
+            log_action(
+                user=request.user,
+                action="UPDATE",
+                target="Company Profile",
+                module="Settings"
+            )
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -224,6 +234,30 @@ class CompanyProfileView(GenericAPIView):
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AuditLog.objects.all()
     serializer_class = AuditLogSerializer
-    permission_classes = [IsAdminRole]
+    permission_classes = [IsAdmin]
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.filter(recipient=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def mark_as_read(self, request, pk=None):
+        notification = self.get_object()
+        notification.is_read = True
+        notification.save()
+        return Response({'status': 'notification marked as read'})
+
+    @action(detail=False, methods=['post'])
+    def mark_all_as_read(self, request):
+        Notification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
+        return Response({'status': 'all notifications marked as read'})
+
+    @action(detail=False, methods=['get'])
+    def unread_count(self, request):
+        count = Notification.objects.filter(recipient=request.user, is_read=False).count()
+        return Response({'count': count})
 
 

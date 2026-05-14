@@ -33,6 +33,7 @@ class CompanyProfile(models.Model):
     postal_code = models.CharField(max_length=20, default="411018")
     country = models.CharField(max_length=100, default="India")
     logo = models.ImageField(upload_to='', null=True, blank=True)
+    audit_logs_enabled = models.BooleanField(default=True)
     
     class Meta:
         verbose_name = _("Company Profile")

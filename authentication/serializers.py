@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User, UserRole
+from .models import User, UserRole, Notification
 from .system_models import SystemConfiguration, CompanyProfile, AuditLog
 
 
@@ -139,3 +139,14 @@ class AuditLogSerializer(serializers.ModelSerializer):
             'module', 'timestamp', 'status'
         ]
         read_only_fields = ['id', 'timestamp']
+
+class NotificationSerializer(serializers.ModelSerializer):
+    sender_name = serializers.ReadOnlyField(source='sender.full_name')
+    
+    class Meta:
+        model = Notification
+        fields = [
+            'id', 'recipient', 'sender', 'sender_name', 'title', 
+            'message', 'notification_type', 'link', 'is_read', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
