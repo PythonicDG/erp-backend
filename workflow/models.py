@@ -75,6 +75,8 @@ class StageInstance(models.Model):
         UNLOCKED = 'Unlocked', _('Unlocked')
         IN_PROGRESS = 'In Progress', _('In Progress')
         SUBMITTED = 'Submitted', _('Submitted')
+        PENDING_APPROVAL = 'Pending Approval', _('Pending Approval')
+        UNDER_REVIEW = 'Under Review', _('Under Review')
         APPROVED = 'Approved', _('Approved')
         REJECTED = 'Rejected', _('Rejected')
 
@@ -100,6 +102,7 @@ class StageSubmission(models.Model):
     class SubmissionStatus(models.TextChoices):
         DRAFT = 'Draft', _('Draft')
         SUBMITTED = 'Submitted', _('Submitted')
+        UNDER_REVIEW = 'Under Review', _('Under Review')
         APPROVED = 'Approved', _('Approved')
         REJECTED = 'Rejected', _('Rejected')
 

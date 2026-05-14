@@ -1,7 +1,10 @@
 from django.utils import timezone
+from django.db import transaction
 from .models import StageTemplate, StageInstance, StageSubmission, StageActivity
 from projects.models import Project
 from authentication.system_models import AuditLog
+from authentication.utils import notify_user
+from authentication.models import User
 
 class WorkflowService:
     @staticmethod
@@ -35,6 +38,7 @@ class WorkflowService:
                 )
 
     @staticmethod
+    @transaction.atomic
     def submit_stage(stage_instance, user, data, is_final=True):
         """
         Handles form submission for a stage.
@@ -52,8 +56,13 @@ class WorkflowService:
             submission.status = StageSubmission.SubmissionStatus.SUBMITTED
             submission.save()
             
-            stage_instance.status = StageInstance.Status.SUBMITTED
+            stage_instance.status = StageInstance.Status.PENDING_APPROVAL
             stage_instance.save()
+
+            # Update Project Status for global tracking
+            project = stage_instance.project
+            project.status = 'Pending Approval'
+            project.save()
             
             StageActivity.objects.create(
                 stage_instance=stage_instance,
@@ -69,10 +78,26 @@ class WorkflowService:
                 module="Workflow",
                 status="SUCCESS"
             )
+
+            # Notify all Supervisors and Admins
+            recipients = list(User.objects.filter(role__in=['ADMIN', 'SUPERVISOR']))
+            if stage_instance.project.supervisor and stage_instance.project.supervisor not in recipients:
+                recipients.append(stage_instance.project.supervisor)
+
+            for recipient in recipients:
+                notify_user(
+                    recipient=recipient,
+                    sender=user,
+                    title="Approval Request",
+                    message=f"{user.full_name} submitted {stage_instance.template.name} for project {stage_instance.project.pid}",
+                    notification_type='approval_request',
+                    link=f"/projects/{stage_instance.project.id}"
+                )
             
         return submission
 
     @staticmethod
+    @transaction.atomic
     def approve_stage(stage_instance, supervisor, remarks=None):
         """
         Approves a stage and unlocks the next one.
@@ -104,6 +129,18 @@ class WorkflowService:
             status="SUCCESS"
         )
         
+        # Notify the submitter
+        last_submission = stage_instance.submissions.order_by('-submitted_at').first()
+        if last_submission:
+            notify_user(
+                recipient=last_submission.submitted_by,
+                sender=supervisor,
+                title="Stage Approved",
+                message=f"Your submission for {stage_instance.template.name} has been approved. {f'Remarks: {remarks}' if remarks else ''}",
+                notification_type='success',
+                link=f"/projects/{stage_instance.project.id}"
+            )
+        
         # Unlock next stage
         next_stage = StageInstance.objects.filter(
             project=stage_instance.project, 
@@ -114,6 +151,11 @@ class WorkflowService:
             next_stage.status = StageInstance.Status.UNLOCKED
             next_stage.unlocked_at = timezone.now()
             next_stage.save()
+            
+            # Reset project status to In Progress
+            project = stage_instance.project
+            project.status = 'In Progress'
+            project.save()
         else:
             # All stages completed, mark project as Closed
             project = stage_instance.project
@@ -121,12 +163,18 @@ class WorkflowService:
             project.save()
 
     @staticmethod
+    @transaction.atomic
     def reject_stage(stage_instance, supervisor, remarks):
         """
         Rejects a stage and sends it back to employee.
         """
         stage_instance.status = StageInstance.Status.REJECTED
         stage_instance.save()
+        
+        # Update Project Status
+        project = stage_instance.project
+        project.status = 'Rejected'
+        project.save()
         
         submission = stage_instance.submissions.filter(status=StageSubmission.SubmissionStatus.SUBMITTED).last()
         if submission:
@@ -149,3 +197,15 @@ class WorkflowService:
             module="Workflow",
             status="SUCCESS"
         )
+
+        # Notify the submitter
+        last_submission = stage_instance.submissions.order_by('-submitted_at').first()
+        if last_submission:
+            notify_user(
+                recipient=last_submission.submitted_by,
+                sender=supervisor,
+                title="Stage Rejected",
+                message=f"Your submission for {stage_instance.template.name} has been rejected. Remarks: {remarks}",
+                notification_type='error',
+                link=f"/projects/{stage_instance.project.id}"
+            )

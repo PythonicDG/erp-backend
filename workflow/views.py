@@ -1,20 +1,22 @@
 from rest_framework import viewsets, permissions, status, decorators
 from rest_framework.response import Response
 from projects.models import Project
+from authentication.models import User
 from .models import StageTemplate, FormField, StageInstance, StageSubmission
 from .serializers import StageTemplateSerializer, FormFieldSerializer, StageInstanceSerializer, StageSubmissionSerializer
 from .services import WorkflowService
 
-class StageTemplateViewSet(viewsets.ModelViewSet):
+from authentication.mixins import AuditLogMixin
+from authentication.permissions import IsAdmin
+
+class StageTemplateViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = StageTemplate.objects.all().prefetch_related('fields')
     serializer_class = StageTemplateSerializer
     permission_classes = [permissions.IsAuthenticated]
+    audit_module = "Workflow"
 
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [permissions.IsAuthenticated()]
-        # Only ADMIN can create/edit/delete
-        return [permissions.IsAuthenticated()] # We will check role in the methods or use a custom class
+    def get_audit_target(self, instance):
+        return f"Workflow Stage: {instance.name}"
 
     @decorators.action(detail=True, methods=['post'])
     def sync_fields(self, request, pk=None):
@@ -40,6 +42,14 @@ class StageTemplateViewSet(viewsets.ModelViewSet):
             )
             created_fields.append(field)
             
+        from authentication.utils import log_action
+        log_action(
+            user=request.user,
+            action="SYNC_FIELDS",
+            target=f"Form for Stage: {template.name}",
+            module="Workflow"
+        )
+            
         return Response(FormFieldSerializer(created_fields, many=True).data)
 
 class StageInstanceViewSet(viewsets.ReadOnlyModelViewSet):
@@ -57,9 +67,13 @@ class StageInstanceViewSet(viewsets.ReadOnlyModelViewSet):
             except Project.DoesNotExist:
                 pass
                 
-            return StageInstance.objects.filter(project_id=project_id).prefetch_related('submissions', 'activities')
+            return StageInstance.objects.filter(project_id=project_id)\
+                .select_related('template', 'project')\
+                .prefetch_related('submissions', 'activities', 'template__fields')
             
-        return StageInstance.objects.all().prefetch_related('submissions', 'activities')
+        return StageInstance.objects.all()\
+            .select_related('template', 'project')\
+            .prefetch_related('submissions', 'activities', 'template__fields')
 
     @decorators.action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
@@ -78,7 +92,6 @@ class StageInstanceViewSet(viewsets.ReadOnlyModelViewSet):
         stage_instance = self.get_object()
         remarks = request.data.get('remarks')
         
-        # Check if user is supervisor/admin
         if request.user.role not in ['ADMIN', 'SUPERVISOR']:
              return Response({"error": "Only supervisors or admins can approve"}, status=status.HTTP_403_FORBIDDEN)
              
