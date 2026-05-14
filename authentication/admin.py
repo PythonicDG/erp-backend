@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import User
-from .system_models import SystemConfiguration, CompanyProfile, RolePermission, AuditLog
+from .system_models import SystemConfiguration, CompanyProfile, AuditLog
 
 
 @admin.register(User)
@@ -40,10 +40,6 @@ class CompanyProfileAdmin(admin.ModelAdmin):
     list_display = ('name', 'email', 'phone', 'city', 'country')
 
 
-@admin.register(RolePermission)
-class RolePermissionAdmin(admin.ModelAdmin):
-    list_display = ('role', 'module', 'can_view', 'can_create', 'can_edit', 'can_delete', 'can_approve')
-    list_filter = ('role', 'module')
 
 
 @admin.register(AuditLog)

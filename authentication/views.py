@@ -8,10 +8,10 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from .models import User
-from .system_models import SystemConfiguration, CompanyProfile, RolePermission, AuditLog
+from .system_models import SystemConfiguration, CompanyProfile, AuditLog
 from .serializers import (
     LoginSerializer, UserSerializer, TeamMemberSerializer,
-    CompanyProfileSerializer, RolePermissionSerializer, AuditLogSerializer
+    CompanyProfileSerializer, AuditLogSerializer
 )
 
 class IsAdminRole(permissions.BasePermission):
@@ -221,19 +221,9 @@ class CompanyProfileView(GenericAPIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class RolePermissionViewSet(viewsets.ModelViewSet):
-    queryset = RolePermission.objects.all()
-    serializer_class = RolePermissionSerializer
-    permission_classes = [IsAdminRole]
-
-    def get_queryset(self):
-        role = self.request.query_params.get('role')
-        if role:
-            return self.queryset.filter(role=role)
-        return self.queryset
-
-
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AuditLog.objects.all()
     serializer_class = AuditLogSerializer
     permission_classes = [IsAdminRole]
+
+

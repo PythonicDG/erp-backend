@@ -46,22 +46,6 @@ class CompanyProfile(models.Model):
     def __str__(self):
         return self.name
 
-class RolePermission(models.Model):
-    role = models.CharField(max_length=20, choices=UserRole.choices)
-    module = models.CharField(max_length=100)
-    can_view = models.BooleanField(default=True)
-    can_create = models.BooleanField(default=False)
-    can_edit = models.BooleanField(default=False)
-    can_delete = models.BooleanField(default=False)
-    can_approve = models.BooleanField(default=False)
-
-    class Meta:
-        verbose_name = _("Role Permission")
-        verbose_name_plural = _("Role Permissions")
-        unique_together = ('role', 'module')
-
-    def __str__(self):
-        return f"{self.role} - {self.module}"
 
 class AuditLog(models.Model):
     user = models.ForeignKey('authentication.User', on_delete=models.SET_NULL, null=True, related_name='audit_logs')

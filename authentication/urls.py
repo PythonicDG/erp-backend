@@ -2,14 +2,13 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     LoginView, CustomTokenRefreshView, LogoutView, MeView, TeamViewSet,
-    CompanyProfileView, RolePermissionViewSet, AuditLogViewSet
+    CompanyProfileView, AuditLogViewSet
 )
 
 app_name = 'authentication'
 
 router = DefaultRouter()
 router.register(r'team', TeamViewSet, basename='team')
-router.register(r'permissions', RolePermissionViewSet, basename='permissions')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-logs')
 
 urlpatterns = [

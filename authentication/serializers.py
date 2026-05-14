@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from .models import User, UserRole
-from .system_models import SystemConfiguration, CompanyProfile, RolePermission, AuditLog
+from .system_models import SystemConfiguration, CompanyProfile, AuditLog
 
 
 class LoginSerializer(serializers.Serializer):
@@ -126,11 +126,6 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
         model = CompanyProfile
         fields = '__all__'
 
-
-class RolePermissionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = RolePermission
-        fields = '__all__'
 
 
 class AuditLogSerializer(serializers.ModelSerializer):
