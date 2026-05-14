@@ -1,6 +1,7 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
+from .system_models import SystemConfiguration
 
 
 class UserRole(models.TextChoices):
@@ -50,6 +51,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_name = models.CharField(max_length=150)
     email = models.EmailField(unique=True, db_index=True)
     phone = models.CharField(max_length=20, blank=True, default='')
+    employee_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
+    department = models.CharField(max_length=100, blank=True, default='')
+    remarks = models.TextField(blank=True, default='')
     role = models.CharField(
         max_length=20,
         choices=UserRole.choices,
@@ -57,7 +61,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    created_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     objects = UserManager()
 
@@ -69,6 +74,14 @@ class User(AbstractBaseUser, PermissionsMixin):
         ordering = ['-created_at']
         verbose_name = 'User'
         verbose_name_plural = 'Users'
+
+    def save(self, *args, **kwargs):
+        if not self.employee_id:
+            # Generate auto employee ID: EMP-0001
+            last_user = User.objects.order_by('-id').first()
+            new_id = (last_user.id + 1) if last_user else 1
+            self.employee_id = f"EMP-{new_id:04d}"
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f'{self.first_name} {self.last_name} ({self.email})'
