@@ -1,20 +1,12 @@
 from django.contrib import admin
-from .models import Project, WorkflowStage, ActivityLog
+from .models import Project, CustomerMaster
 
-class WorkflowStageInline(admin.TabularInline):
-    model = WorkflowStage
-    extra = 0
-    fields = ('name', 'order', 'status', 'unlocked_at', 'completed_at')
-    readonly_fields = ('unlocked_at', 'completed_at')
-
-class ActivityLogInline(admin.TabularInline):
-    model = ActivityLog
-    extra = 0
-    readonly_fields = ('user', 'action', 'details', 'timestamp')
-    can_delete = False
-    
-    def has_add_permission(self, request, obj=None):
-        return False
+@admin.register(CustomerMaster)
+class CustomerMasterAdmin(admin.ModelAdmin):
+    list_display = ('name', 'mobile_number', 'email', 'category', 'created_at')
+    list_filter = ('category',)
+    search_fields = ('name', 'mobile_number', 'email')
+    readonly_fields = ('created_at', 'updated_at')
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
@@ -25,8 +17,6 @@ class ProjectAdmin(admin.ModelAdmin):
     list_filter = ('status', 'project_type', 'date_received')
     search_fields = ('pid', 'name', 'customer_name', 'customer_part_no', 'pcepl_part_no')
     readonly_fields = ('pid', 'month_received', 'created_at', 'updated_at', 'created_by')
-    
-    inlines = [WorkflowStageInline, ActivityLogInline]
     
     fieldsets = (
         ('Basic Information', {
@@ -46,16 +36,3 @@ class ProjectAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-
-@admin.register(WorkflowStage)
-class WorkflowStageAdmin(admin.ModelAdmin):
-    list_display = ('project', 'name', 'order', 'status')
-    list_filter = ('status', 'name')
-    search_fields = ('project__pid', 'name')
-
-@admin.register(ActivityLog)
-class ActivityLogAdmin(admin.ModelAdmin):
-    list_display = ('project', 'user', 'action', 'timestamp')
-    list_filter = ('action', 'timestamp')
-    search_fields = ('project__pid', 'user__email', 'action')
-    readonly_fields = ('project', 'user', 'action', 'details', 'timestamp')

@@ -2,12 +2,17 @@ from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Project
-from .serializers import ProjectSerializer
+from .models import Project, CustomerMaster
+from .serializers import ProjectSerializer, CustomerMasterSerializer
 from .permissions import CanCreateProject
+from authentication.mixins import AuditLogMixin
+from authentication.permissions import IsAdmin
 
-class ProjectViewSet(viewsets.ModelViewSet):
-    queryset = Project.objects.all().prefetch_related('stages', 'activities')
+class ProjectViewSet(AuditLogMixin, viewsets.ModelViewSet):
+    queryset = Project.objects.all().select_related('customer').prefetch_related(
+        'workflow_stages', 
+        'workflow_stages__template'
+    )
     serializer_class = ProjectSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     
@@ -15,6 +20,28 @@ class ProjectViewSet(viewsets.ModelViewSet):
     search_fields = ['pid', 'name', 'customer_name', 'customer_part_no', 'pcepl_part_no']
     ordering_fields = ['date_received', 'target_completion_date', 'created_at', 'pid']
     ordering = ['-created_at']
+    audit_module = "Projects"
+
+    def get_audit_target(self, instance):
+        return f"Project: {instance.pid} ({instance.name})"
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+        super().perform_create(serializer)
+
+class CustomerMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
+    queryset = CustomerMaster.objects.all()
+    serializer_class = CustomerMasterSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter, DjangoFilterBackend]
+    filterset_fields = ['category']
+    search_fields = ['name', 'mobile_number', 'email']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
+    permission_classes = [permissions.IsAuthenticated]
+    audit_module = "Customer Masters"
+
+    def get_audit_target(self, instance):
+        return f"Customer: {instance.name}"
 
     def get_permissions(self):
         if self.action == 'create':
@@ -74,7 +101,8 @@ class DashboardViewSet(viewsets.ViewSet):
         total_projects = projects_qs.count()
         closed_projects = projects_qs.filter(status='Closed').count()
         open_projects = projects_qs.filter(status__in=['Open', 'In Progress']).count()
-        customers_count = projects_qs.values('customer_name').distinct().count()
+        pending_approval = projects_qs.filter(status='Pending Approval').count()
+        customers_count = CustomerMaster.objects.count()
         
         completion_rate = (closed_projects / total_projects * 100) if total_projects > 0 else 0
         
@@ -128,6 +156,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 'total': total_projects,
                 'closed': closed_projects,
                 'open': open_projects,
+                'pending': pending_approval,
                 'customers': customers_count,
                 'completion_rate': round(completion_rate, 2)
             },

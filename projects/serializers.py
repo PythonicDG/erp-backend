@@ -1,29 +1,23 @@
 from rest_framework import serializers
-from .models import Project, WorkflowStage, ActivityLog
+from .models import Project, CustomerMaster
 from .services import ProjectService
 
-class WorkflowStageSerializer(serializers.ModelSerializer):
+class CustomerMasterSerializer(serializers.ModelSerializer):
     class Meta:
-        model = WorkflowStage
-        fields = ['id', 'name', 'order', 'status', 'unlocked_at', 'completed_at']
-
-class ActivityLogSerializer(serializers.ModelSerializer):
-    user_name = serializers.ReadOnlyField(source='user.get_full_name')
-
-    class Meta:
-        model = ActivityLog
-        fields = ['id', 'action', 'details', 'timestamp', 'user_name']
+        model = CustomerMaster
+        fields = '__all__'
 
 class ProjectSerializer(serializers.ModelSerializer):
     pid = serializers.CharField(read_only=True)
     month_received = serializers.CharField(read_only=True)
     current_stage = serializers.SerializerMethodField()
     created_by_name = serializers.ReadOnlyField(source='created_by.get_full_name')
+    customer_details = CustomerMasterSerializer(source='customer', read_only=True)
  
     class Meta:
         model = Project
         fields = [
-            'id', 'pid', 'name', 'customer_name', 'customer_part_no', 
+            'id', 'pid', 'name', 'customer', 'customer_details', 'customer_name', 'customer_part_no', 
             'pcepl_part_no', 'project_type', 'inspection_authority', 
             'applicable_standard', 'date_received', 'month_received', 
             'target_completion_date', 'status', 'created_at', 'updated_at',

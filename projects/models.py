@@ -8,11 +8,40 @@ class ProjectStatus(models.TextChoices):
     IN_PROGRESS = 'In Progress', _('In Progress')
     CLOSED = 'Closed', _('Closed')
     REJECTED = 'Rejected', _('Rejected')
+    UNDER_REVIEW = 'Under Review', _('Under Review')
+    PENDING_APPROVAL = 'Pending Approval', _('Pending Approval')
+
+class CustomerMaster(models.Model):
+    name = models.CharField(max_length=255, verbose_name=_("Customer Name"))
+    category = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("Customer Category"))
+    mobile_number = models.CharField(max_length=20, verbose_name=_("Mobile Number"))
+    alternate_mobile_number = models.CharField(max_length=20, blank=True, null=True, verbose_name=_("Alternate Mobile Number"))
+    email = models.EmailField(verbose_name=_("Email"))
+    remarks = models.TextField(blank=True, null=True, verbose_name=_("Remark/Notes"))
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = _("Customer Master")
+        verbose_name_plural = _("Customer Masters")
+
+    def __str__(self):
+        return self.name
 
 class Project(models.Model):
     pid = models.CharField(max_length=20, unique=True, blank=True, verbose_name=_("Project ID"))
     name = models.CharField(max_length=255, verbose_name=_("Project Name"))
-    customer_name = models.CharField(max_length=255, verbose_name=_("Customer Name"))
+    customer = models.ForeignKey(
+        CustomerMaster,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='projects',
+        verbose_name=_("Customer")
+    )
+    # Keeping for backward compatibility if needed, or removing
+    customer_name = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Customer Name String"))
     customer_part_no = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("Customer Part No"))
     pcepl_part_no = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("PCEPL Part No"))
     project_type = models.CharField(max_length=100, verbose_name=_("Project Type"))
@@ -66,40 +95,3 @@ class Project(models.Model):
         if not self.month_received:
             self.month_received = ProjectService.get_month_received_string(self.date_received)
         super().save(*args, **kwargs)
-
-class WorkflowStage(models.Model):
-    class StageStatus(models.TextChoices):
-        LOCKED = 'Locked', _('Locked')
-        UNLOCKED = 'Unlocked', _('Unlocked')
-        COMPLETED = 'Completed', _('Completed')
-
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='stages')
-    name = models.CharField(max_length=100)
-    order = models.PositiveIntegerField()
-    status = models.CharField(
-        max_length=20,
-        choices=StageStatus.choices,
-        default=StageStatus.LOCKED
-    )
-    unlocked_at = models.DateTimeField(null=True, blank=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        ordering = ['order']
-        unique_together = ['project', 'order']
-
-    def __str__(self):
-        return f"{self.project.pid} - {self.name} ({self.status})"
-
-class ActivityLog(models.Model):
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='activities')
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
-    action = models.CharField(max_length=255)
-    details = models.JSONField(default=dict, blank=True)
-    timestamp = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-timestamp']
-
-    def __str__(self):
-        return f"{self.project.pid} - {self.action} by {self.user}"
