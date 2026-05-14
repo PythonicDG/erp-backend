@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import User
+from .system_models import SystemConfiguration, CompanyProfile, RolePermission, AuditLog
 
 
 @admin.register(User)
@@ -27,3 +28,27 @@ class UserAdmin(BaseUserAdmin):
     )
 
     readonly_fields = ('created_at', 'last_login')
+
+
+@admin.register(SystemConfiguration)
+class SystemConfigurationAdmin(admin.ModelAdmin):
+    list_display = ('company_name', 'financial_year', 'system_version', 'last_update')
+
+
+@admin.register(CompanyProfile)
+class CompanyProfileAdmin(admin.ModelAdmin):
+    list_display = ('name', 'email', 'phone', 'city', 'country')
+
+
+@admin.register(RolePermission)
+class RolePermissionAdmin(admin.ModelAdmin):
+    list_display = ('role', 'module', 'can_view', 'can_create', 'can_edit', 'can_delete', 'can_approve')
+    list_filter = ('role', 'module')
+
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = ('user', 'action', 'module', 'target', 'timestamp', 'status')
+    list_filter = ('module', 'status', 'timestamp')
+    search_fields = ('user__email', 'action', 'target')
+    readonly_fields = ('timestamp',)

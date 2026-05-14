@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User
+from .models import User, UserRole
+from .system_models import SystemConfiguration, CompanyProfile, RolePermission, AuditLog
 
 
 class LoginSerializer(serializers.Serializer):
@@ -118,3 +119,28 @@ class RegisterSerializer(serializers.ModelSerializer):
         validated_data.pop('confirm_password')
         user = User.objects.create_user(**validated_data)
         return user
+
+
+class CompanyProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompanyProfile
+        fields = '__all__'
+
+
+class RolePermissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RolePermission
+        fields = '__all__'
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    user_name = serializers.ReadOnlyField(source='user.full_name')
+    user_role = serializers.ReadOnlyField(source='user.role')
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            'id', 'user_name', 'user_role', 'action', 'target', 
+            'module', 'timestamp', 'status'
+        ]
+        read_only_fields = ['id', 'timestamp']

@@ -8,7 +8,11 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from .models import User
-from .serializers import LoginSerializer, UserSerializer, TeamMemberSerializer
+from .system_models import SystemConfiguration, CompanyProfile, RolePermission, AuditLog
+from .serializers import (
+    LoginSerializer, UserSerializer, TeamMemberSerializer,
+    CompanyProfileSerializer, RolePermissionSerializer, AuditLogSerializer
+)
 
 class IsAdminRole(permissions.BasePermission):
     """Permission check for users with ADMIN role."""
@@ -193,3 +197,43 @@ class MeView(GenericAPIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class CompanyProfileView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = CompanyProfileSerializer
+
+    def get(self, request):
+        profile = CompanyProfile.objects.first()
+        if not profile:
+            profile = CompanyProfile.objects.create(name="PCEPL Engineering")
+        serializer = self.get_serializer(profile)
+        return Response(serializer.data)
+
+    def patch(self, request):
+        if request.user.role != 'ADMIN':
+            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        profile = CompanyProfile.objects.first()
+        serializer = self.get_serializer(profile, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RolePermissionViewSet(viewsets.ModelViewSet):
+    queryset = RolePermission.objects.all()
+    serializer_class = RolePermissionSerializer
+    permission_classes = [IsAdminRole]
+
+    def get_queryset(self):
+        role = self.request.query_params.get('role')
+        if role:
+            return self.queryset.filter(role=role)
+        return self.queryset
+
+
+class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = AuditLog.objects.all()
+    serializer_class = AuditLogSerializer
+    permission_classes = [IsAdminRole]

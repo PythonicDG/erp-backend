@@ -2,13 +2,7 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.db import models
 from django.utils import timezone
 from .system_models import SystemConfiguration
-
-
-class UserRole(models.TextChoices):
-    """Enumeration of user roles in the ERP system."""
-    ADMIN = 'ADMIN', 'Admin'
-    SUPERVISOR = 'SUPERVISOR', 'Supervisor'
-    EMPLOYEE = 'EMPLOYEE', 'Employee'
+from .choices import UserRole
 
 
 class UserManager(BaseUserManager):
