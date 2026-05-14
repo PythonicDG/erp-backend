@@ -29,23 +29,63 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """Serializer for user profile data (read-only)."""
+    """Serializer for user profile data."""
     full_name = serializers.ReadOnlyField()
 
     class Meta:
         model = User
         fields = [
             'id',
+            'employee_id',
             'first_name',
             'last_name',
             'full_name',
             'email',
             'phone',
+            'department',
             'role',
             'is_active',
+            'remarks',
             'created_at',
+            'updated_at',
         ]
-        read_only_fields = ['id', 'email', 'role', 'is_active', 'created_at']
+        read_only_fields = ['id', 'employee_id', 'created_at', 'updated_at']
+
+class TeamMemberSerializer(serializers.ModelSerializer):
+    """Detailed serializer for administrative team management."""
+    full_name = serializers.ReadOnlyField()
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'id',
+            'employee_id',
+            'first_name',
+            'last_name',
+            'full_name',
+            'email',
+            'phone',
+            'department',
+            'role',
+            'is_active',
+            'remarks',
+            'password',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'employee_id', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', 'ERP12345') # Default temp password
+        user = User.objects.create_user(password=password, **validated_data)
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        if password:
+            instance.set_password(password)
+        return super().update(instance, validated_data)
 
 
 class RegisterSerializer(serializers.ModelSerializer):

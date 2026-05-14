@@ -1,4 +1,4 @@
-from rest_framework import status
+from rest_framework import status, viewsets, permissions
 from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -7,7 +7,23 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
-from .serializers import LoginSerializer, UserSerializer
+from .models import User
+from .serializers import LoginSerializer, UserSerializer, TeamMemberSerializer
+
+class IsAdminRole(permissions.BasePermission):
+    """Permission check for users with ADMIN role."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == 'ADMIN'
+
+class TeamViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing team members (Admins only).
+    """
+    queryset = User.objects.all().order_by('-created_at')
+    serializer_class = TeamMemberSerializer
+    permission_classes = [IsAdminRole]
+    filterset_fields = ['role', 'is_active', 'department']
+    search_fields = ['first_name', 'last_name', 'email', 'employee_id']
 
 
 class LoginView(GenericAPIView):
