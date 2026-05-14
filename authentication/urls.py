@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     LoginView, CustomTokenRefreshView, LogoutView, MeView, TeamViewSet,
-    CompanyProfileView, AuditLogViewSet
+    CompanyProfileView, AuditLogViewSet, NotificationViewSet
 )
 
 app_name = 'authentication'
@@ -10,6 +10,7 @@ app_name = 'authentication'
 router = DefaultRouter()
 router.register(r'team', TeamViewSet, basename='team')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-logs')
+router.register(r'notifications', NotificationViewSet, basename='notifications')
 
 urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),

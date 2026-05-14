@@ -1,5 +1,5 @@
 from django.utils import timezone
-from .models import Project, ActivityLog
+from .models import Project
 
 class ProjectService:
     @staticmethod
@@ -38,9 +38,11 @@ class ProjectService:
 
     @staticmethod
     def log_activity(project, user, action, details=None):
-        return ActivityLog.objects.create(
-            project=project,
+        from authentication.system_models import AuditLog
+        return AuditLog.objects.create(
             user=user,
             action=action,
-            details=details or {}
+            target=f"Project: {project.pid}",
+            module="Projects",
+            status="SUCCESS"
         )

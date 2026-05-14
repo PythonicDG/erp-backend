@@ -83,3 +83,27 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def full_name(self):
         return f'{self.first_name} {self.last_name}'.strip()
+
+class Notification(models.Model):
+    class NotificationType(models.TextChoices):
+        INFO = 'info', 'Information'
+        SUCCESS = 'success', 'Success'
+        WARNING = 'warning', 'Warning'
+        ERROR = 'error', 'Error'
+        APPROVAL_REQUEST = 'approval_request', 'Approval Request'
+        APPROVAL_ACTION = 'approval_action', 'Approval Action'
+
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    sender = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='sent_notifications')
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    notification_type = models.CharField(max_length=20, choices=NotificationType.choices, default=NotificationType.INFO)
+    link = models.CharField(max_length=255, blank=True, null=True) # e.g. /projects/1
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Notification for {self.recipient.email}: {self.title}"
