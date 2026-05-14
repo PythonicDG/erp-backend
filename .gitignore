@@ -35,3 +35,5 @@ ENV/
 # Other
 *.swp
 *.swo
+
+/company_logos

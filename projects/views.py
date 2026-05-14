@@ -34,6 +34,23 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 updated_count += 1
         return Response({"message": f"Updated {updated_count} projects"})
 
+    @action(detail=True, methods=['get'])
+    def full_report(self, request, pk=None):
+        from workflow.models import StageInstance
+        from workflow.serializers import StageInstanceSerializer
+        from authentication.system_models import CompanyProfile
+        from authentication.serializers import CompanyProfileSerializer
+        
+        project = self.get_object()
+        stages = StageInstance.objects.filter(project=project).order_by('order')
+        company = CompanyProfile.objects.first()
+        
+        return Response({
+            "project": ProjectSerializer(project).data,
+            "stages": StageInstanceSerializer(stages, many=True).data,
+            "company": CompanyProfileSerializer(company).data if company else None
+        })
+
     @action(detail=False, methods=['get'])
     def statistics(self, request):
         from django.db.models import Count

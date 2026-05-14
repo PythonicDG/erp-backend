@@ -32,7 +32,7 @@ class CompanyProfile(models.Model):
     state = models.CharField(max_length=100, default="Maharashtra")
     postal_code = models.CharField(max_length=20, default="411018")
     country = models.CharField(max_length=100, default="India")
-    logo = models.ImageField(upload_to='company_logos/', null=True, blank=True)
+    logo = models.ImageField(upload_to='', null=True, blank=True)
     
     class Meta:
         verbose_name = _("Company Profile")
