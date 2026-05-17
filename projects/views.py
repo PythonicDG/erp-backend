@@ -846,6 +846,15 @@ class DashboardViewSet(viewsets.ViewSet):
         
         # All users see all projects for full transparency
         projects_qs = Project.objects.all()
+        
+        # Apply Year and Month Filters
+        year = request.query_params.get('year')
+        month = request.query_params.get('month')
+        
+        if year and year != 'all' and year.isdigit():
+            projects_qs = projects_qs.filter(date_received__year=int(year))
+        if month and month != 'all' and month.isdigit():
+            projects_qs = projects_qs.filter(date_received__month=int(month))
             
         # 1. Quick Stats
         total_projects = projects_qs.count()
