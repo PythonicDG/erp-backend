@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Project, CustomerMaster, StandardMaster
+from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster
 from .services import ProjectService
 
 class CustomerMasterSerializer(serializers.ModelSerializer):
@@ -12,6 +12,14 @@ class StandardMasterSerializer(serializers.ModelSerializer):
         model = StandardMaster
         fields = '__all__'
 
+class InspectionAuthorityMasterSerializer(serializers.ModelSerializer):
+    applicable_standard_details = StandardMasterSerializer(source='applicable_standard', read_only=True)
+    applicable_standard_name = serializers.ReadOnlyField(source='applicable_standard.standard_name')
+
+    class Meta:
+        model = InspectionAuthorityMaster
+        fields = '__all__'
+
 class ProjectSerializer(serializers.ModelSerializer):
     pid = serializers.CharField(read_only=True)
     month_received = serializers.CharField(read_only=True)
@@ -19,12 +27,13 @@ class ProjectSerializer(serializers.ModelSerializer):
     created_by_name = serializers.ReadOnlyField(source='created_by.get_full_name')
     customer_details = CustomerMasterSerializer(source='customer', read_only=True)
     standard_details = StandardMasterSerializer(source='standard', read_only=True)
+    inspection_authority_details = InspectionAuthorityMasterSerializer(source='inspection_authority_fk', read_only=True)
  
     class Meta:
         model = Project
         fields = [
             'id', 'pid', 'name', 'customer', 'customer_details', 'customer_name', 'customer_part_no', 
-            'pcepl_part_no', 'project_type', 'inspection_authority', 
+            'pcepl_part_no', 'project_type', 'inspection_authority', 'inspection_authority_fk', 'inspection_authority_details',
             'applicable_standard', 'standard', 'standard_details', 'date_received', 'month_received', 
             'target_completion_date', 'status', 'priority', 'description', 'created_at', 'updated_at',
             'created_by', 'created_by_name', 'current_stage', 'assigned_employee'

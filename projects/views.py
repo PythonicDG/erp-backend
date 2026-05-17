@@ -2,8 +2,8 @@ from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Project, CustomerMaster, StandardMaster
-from .serializers import ProjectSerializer, CustomerMasterSerializer, StandardMasterSerializer
+from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster
+from .serializers import ProjectSerializer, CustomerMasterSerializer, StandardMasterSerializer, InspectionAuthorityMasterSerializer
 from .permissions import CanCreateProject
 from authentication.mixins import AuditLogMixin
 from authentication.permissions import IsAdmin
@@ -1165,6 +1165,357 @@ class StandardMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
                     errors.append({
                         "row": row_num,
                         "standard_number": std_num if std_num else "Unknown",
+                        "error_message": f"Unexpected error: {str(e)}"
+                    })
+                    failure_count += 1
+                    
+            return Response({
+                "success_count": success_count,
+                "skipped_count": skipped_count,
+                "failure_count": failure_count,
+                "total_processed": len(rows) - 1,
+                "errors": errors,
+                "skipped": skipped,
+                "successes": successes
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"error": f"Failed to parse Excel file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class InspectionAuthorityMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
+    queryset = InspectionAuthorityMaster.objects.all().select_related('applicable_standard')
+    serializer_class = InspectionAuthorityMasterSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['status', 'category', 'approval_type']
+    search_fields = ['authority_id', 'name', 'contact_person', 'remarks']
+    ordering_fields = ['authority_id', 'name', 'created_at']
+    ordering = ['authority_id']
+    audit_module = "Inspection Authority Master"
+
+    def get_audit_target(self, instance):
+        return f"Inspection Authority: {instance.authority_id} ({instance.name})"
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        from .permissions import IsAdminUser
+        return [permissions.IsAuthenticated(), IsAdminUser()]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = InspectionAuthorityMaster.objects.all().select_related('applicable_standard')
+        if user and user.role != 'ADMIN':
+            queryset = queryset.filter(status='Active')
+        return queryset
+
+    @action(detail=False, methods=['get'], url_path='export')
+    def export_excel(self, request):
+        import openpyxl
+        from django.http import HttpResponse
+        from datetime import datetime
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Authorities Export"
+        
+        header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+        header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+        data_font = Font(name="Arial", size=10)
+        
+        thin_border = Border(
+            left=Side(style='thin', color='E2E8F0'),
+            right=Side(style='thin', color='E2E8F0'),
+            top=Side(style='thin', color='E2E8F0'),
+            bottom=Side(style='thin', color='E2E8F0')
+        )
+        
+        headers = [
+            "Inspection Authority ID", "Inspection Authority Name", "Category", 
+            "Contact Person", "Applicable Standard / Agency", "Approval Type", 
+            "Status", "Remarks", "Date Created", "Last Updated"
+        ]
+        
+        ws.append(headers)
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+            
+        for auth in queryset:
+            std_str = f"{auth.applicable_standard.standard_number} - {auth.applicable_standard.standard_name}" if auth.applicable_standard else ''
+            row = [
+                auth.authority_id,
+                auth.name,
+                auth.category,
+                auth.contact_person or '',
+                std_str,
+                auth.approval_type or '',
+                auth.status,
+                auth.remarks or '',
+                auth.created_at.strftime('%Y-%m-%d %H:%M:%S') if auth.created_at else '',
+                auth.updated_at.strftime('%Y-%m-%d %H:%M:%S') if auth.updated_at else ''
+            ]
+            ws.append(row)
+            
+        for row_idx in range(2, ws.max_row + 1):
+            for col_idx in range(1, len(headers) + 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.font = data_font
+                cell.border = thin_border
+                
+                if col_idx in [1, 3, 6, 7, 9, 10]:
+                    cell.alignment = Alignment(horizontal="center")
+                else:
+                    cell.alignment = Alignment(horizontal="left")
+                    
+        for col in ws.columns:
+            max_len = 0
+            for cell in col:
+                val_str = str(cell.value or '')
+                if len(val_str) > max_len:
+                    max_len = len(val_str)
+            col_letter = openpyxl.utils.get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+            
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        filename = f"Inspection_Authority_Master_Export_{current_date}.xlsx"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        wb.save(response)
+        
+        from authentication.utils import log_action
+        log_action(
+            user=request.user,
+            action="EXPORT",
+            target="All Inspection Authorities Excel",
+            module="Inspection Authority Master"
+        )
+        
+        return response
+
+    @action(detail=False, methods=['get'], url_path='download-template')
+    def download_template(self, request):
+        import openpyxl
+        from django.http import HttpResponse
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Inspection Authority Template"
+        
+        headers = [
+            "Inspection Authority ID", "Inspection Authority Name", "Category", 
+            "Contact Person", "Applicable Standard Number", "Approval Type", "Status", "Remarks"
+        ]
+        ws.append(headers)
+        
+        sample_rows = [
+            ["IA-001", "Lloyds Register of Shipping", "Marine", "John Doe", "IEC 61439-1", "Marine Approval", "Active", "Standard marine inspection agency."],
+            ["IA-002", "Defense QA Agency", "Defence", "Jane Smith", "", "Type Approval", "Active", "Defense grade certifications."],
+            ["IA-003", "Customer Inspection", "Customer", "", "ISO 9001", "Standard QA", "Active", "Client representative inspections."]
+        ]
+        for row in sample_rows:
+            ws.append(row)
+            
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = openpyxl.utils.get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 15)
+            
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response["Content-Disposition"] = 'attachment; filename="inspection_authorities_template.xlsx"'
+        wb.save(response)
+        return response
+
+    @action(detail=False, methods=['post'], url_path='bulk-upload')
+    def bulk_upload(self, request):
+        import openpyxl
+        from django.db import transaction
+        from authentication.system_models import AuditLog
+        
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        skip_duplicates = request.data.get('skip_duplicates', 'true').lower() == 'true'
+        
+        try:
+            wb = openpyxl.load_workbook(file_obj, data_only=True)
+            sheet = wb.active
+            rows = list(sheet.iter_rows(values_only=True))
+            if not rows:
+                return Response({"error": "Excel file is empty"}, status=status.HTTP_400_BAD_REQUEST)
+                
+            headers = [str(h).strip().lower() if h else "" for h in rows[0]]
+            
+            id_idx = -1
+            name_idx = -1
+            cat_idx = -1
+            contact_idx = -1
+            std_idx = -1
+            appr_idx = -1
+            status_idx = -1
+            rem_idx = -1
+
+            for idx, h in enumerate(headers):
+                if h in ['inspection authority id', 'inspection_authority_id', 'authority_id', 'id']:
+                    id_idx = idx
+                elif h in ['inspection authority name', 'inspection_authority_name', 'name']:
+                    name_idx = idx
+                elif h in ['category', 'type']:
+                    cat_idx = idx
+                elif h in ['contact person', 'contact_person', 'contact']:
+                    contact_idx = idx
+                elif h in ['applicable standard number', 'applicable_standard_number', 'standard number', 'standard']:
+                    std_idx = idx
+                elif h in ['approval type', 'approval_type', 'approval']:
+                    appr_idx = idx
+                elif h in ['status', 'active']:
+                    status_idx = idx
+                elif h in ['remarks', 'notes', 'remark']:
+                    rem_idx = idx
+                    
+            missing = []
+            if id_idx == -1: missing.append("Inspection Authority ID")
+            if name_idx == -1: missing.append("Inspection Authority Name")
+            if cat_idx == -1: missing.append("Category")
+
+            if missing:
+                return Response({
+                    "error": f"Missing required columns: {', '.join(missing)}. Please use the downloadable template."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            success_count = 0
+            skipped_count = 0
+            failure_count = 0
+            errors = []
+            skipped = []
+            successes = []
+
+            allowed_cats = ['Marine', 'Customer', 'QA Agency', 'Internal', 'Defence']
+
+            for row_num, row in enumerate(rows[1:], start=2):
+                if not any(cell is not None and str(cell).strip() != "" for cell in row):
+                    continue
+                    
+                auth_id = ""
+                try:
+                    auth_id = str(row[id_idx]).strip() if row[id_idx] is not None else ""
+                    auth_name = str(row[name_idx]).strip() if row[name_idx] is not None else ""
+                    cat_val = str(row[cat_idx]).strip() if row[cat_idx] is not None else ""
+                    
+                    if not auth_id:
+                        errors.append({
+                            "row": row_num,
+                            "authority_id": "N/A",
+                            "error_message": "Inspection Authority ID is required"
+                        })
+                        failure_count += 1
+                        continue
+                        
+                    if not auth_name:
+                        errors.append({
+                            "row": row_num,
+                            "authority_id": auth_id,
+                            "error_message": "Inspection Authority Name is required"
+                        })
+                        failure_count += 1
+                        continue
+                        
+                    if not cat_val:
+                        errors.append({
+                            "row": row_num,
+                            "authority_id": auth_id,
+                            "error_message": "Category is required"
+                        })
+                        failure_count += 1
+                        continue
+
+                    # Validate category choice
+                    match_cat = next((c for c in allowed_cats if c.lower() == cat_val.lower()), None)
+                    if not match_cat:
+                        errors.append({
+                            "row": row_num,
+                            "authority_id": auth_id,
+                            "error_message": f"Invalid category '{cat_val}'. Must be one of: {', '.join(allowed_cats)}"
+                        })
+                        failure_count += 1
+                        continue
+
+                    contact_val = str(row[contact_idx]).strip() if (contact_idx != -1 and row[contact_idx] is not None) else ""
+                    appr_val = str(row[appr_idx]).strip() if (appr_idx != -1 and row[appr_idx] is not None) else ""
+                    rem_val = str(row[rem_idx]).strip() if (rem_idx != -1 and row[rem_idx] is not None) else ""
+                    
+                    # Resolve applicable standard relation if provided
+                    std_instance = None
+                    if std_idx != -1 and row[std_idx] is not None:
+                        std_num = str(row[std_idx]).strip()
+                        if std_num:
+                            std_instance = StandardMaster.objects.filter(standard_number__iexact=std_num).first()
+                            if not std_instance:
+                                errors.append({
+                                    "row": row_num,
+                                    "authority_id": auth_id,
+                                    "error_message": f"Standard with number '{std_num}' does not exist. Please upload the Standard first."
+                                })
+                                failure_count += 1
+                                continue
+                    
+                    status_val = "Active"
+                    if status_idx != -1 and row[status_idx] is not None:
+                        raw_status = str(row[status_idx]).strip().capitalize()
+                        if raw_status in ["Active", "Inactive"]:
+                            status_val = raw_status
+
+                    if skip_duplicates:
+                        existing = InspectionAuthorityMaster.objects.filter(authority_id__iexact=auth_id).first()
+                        if existing:
+                            skipped.append({
+                                "row": row_num,
+                                "authority_id": auth_id,
+                                "reason": f"Inspection Authority with ID '{auth_id}' already exists."
+                            })
+                            skipped_count += 1
+                            continue
+                            
+                    with transaction.atomic():
+                        auth_instance, created = InspectionAuthorityMaster.objects.update_or_create(
+                            authority_id=auth_id,
+                            defaults={
+                                "name": auth_name,
+                                "category": match_cat,
+                                "contact_person": contact_val,
+                                "applicable_standard": std_instance,
+                                "approval_type": appr_val,
+                                "status": status_val,
+                                "remarks": rem_val
+                            }
+                        )
+                        
+                        AuditLog.objects.create(
+                            user=request.user,
+                            action="Inspection Authority Created/Updated via Bulk Upload",
+                            target=f"Authority: {auth_instance.authority_id}",
+                            module="Inspection Authority Master",
+                            status="SUCCESS"
+                        )
+                        
+                    successes.append(auth_id)
+                    success_count += 1
+                    
+                except Exception as e:
+                    errors.append({
+                        "row": row_num,
+                        "authority_id": auth_id if auth_id else "Unknown",
                         "error_message": f"Unexpected error: {str(e)}"
                     })
                     failure_count += 1

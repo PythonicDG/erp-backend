@@ -46,6 +46,14 @@ class Project(models.Model):
     pcepl_part_no = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("PCEPL Part No"))
     project_type = models.CharField(max_length=100, verbose_name=_("Project Type"))
     inspection_authority = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Inspection Authority"))
+    inspection_authority_fk = models.ForeignKey(
+        'InspectionAuthorityMaster',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='projects',
+        verbose_name=_("Inspection Authority FK")
+    )
     applicable_standard = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Applicable Standard"))
     standard = models.ForeignKey(
         'StandardMaster',
@@ -106,6 +114,8 @@ class Project(models.Model):
             self.month_received = ProjectService.get_month_received_string(self.date_received)
         if self.standard:
             self.applicable_standard = self.standard.standard_number
+        if self.inspection_authority_fk:
+            self.inspection_authority = self.inspection_authority_fk.name
         super().save(*args, **kwargs)
 
 
@@ -140,3 +150,43 @@ class StandardMaster(models.Model):
 
     def __str__(self):
         return f"{self.standard_number} - {self.standard_name}"
+
+
+class InspectionAuthorityMaster(models.Model):
+    CATEGORY_CHOICES = [
+        ('Marine', 'Marine'),
+        ('Customer', 'Customer'),
+        ('QA Agency', 'QA Agency'),
+        ('Internal', 'Internal'),
+        ('Defence', 'Defence'),
+    ]
+    STATUS_CHOICES = [
+        ('Active', 'Active'),
+        ('Inactive', 'Inactive'),
+    ]
+
+    authority_id = models.CharField(max_length=100, unique=True, verbose_name=_("Inspection Authority ID"))
+    name = models.CharField(max_length=255, verbose_name=_("Inspection Authority Name"))
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, verbose_name=_("Category"))
+    contact_person = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Contact Person"))
+    applicable_standard = models.ForeignKey(
+        StandardMaster,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inspection_authorities',
+        verbose_name=_("Applicable Standard / Agency")
+    )
+    approval_type = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Approval Type"))
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Active', verbose_name=_("Status"))
+    remarks = models.TextField(blank=True, null=True, verbose_name=_("Remarks"))
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['authority_id']
+        verbose_name = _("Inspection Authority Master")
+        verbose_name_plural = _("Inspection Authorities Master")
+
+    def __str__(self):
+        return f"{self.authority_id} - {self.name}"
