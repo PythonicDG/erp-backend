@@ -8,3 +8,4 @@ django-extensions
 gunicorn
 djangorestframework-simplejwt
 drf-spectacular
+openpyxl
