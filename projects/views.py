@@ -494,6 +494,103 @@ class CustomerMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
             return [CanCreateProject()]
         return [permissions.IsAuthenticated()]
 
+    @action(detail=False, methods=['get'], url_path='export')
+    def export_excel(self, request):
+        import openpyxl
+        from django.http import HttpResponse
+        from datetime import datetime
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        
+        # Apply filters & search context
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Customer Master Export"
+        
+        # Professional Colors & Styles
+        header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid") # Deep Navy Blue
+        header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+        data_font = Font(name="Arial", size=10)
+        
+        thin_border = Border(
+            left=Side(style='thin', color='E2E8F0'),
+            right=Side(style='thin', color='E2E8F0'),
+            top=Side(style='thin', color='E2E8F0'),
+            bottom=Side(style='thin', color='E2E8F0')
+        )
+        
+        headers = [
+            "Customer Name", "Customer Category", "Mobile Number", 
+            "Alternate Mobile Number", "Email Address", "Remarks / Notes", 
+            "Date Created", "Last Updated"
+        ]
+        
+        # Write headers
+        ws.append(headers)
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+            
+        # Write customer data
+        for customer in queryset:
+            row = [
+                customer.name,
+                customer.category or '',
+                customer.mobile_number or '',
+                customer.alternate_mobile_number or '',
+                customer.email or '',
+                customer.remarks or '',
+                customer.created_at.strftime('%Y-%m-%d %H:%M:%S') if customer.created_at else '',
+                customer.updated_at.strftime('%Y-%m-%d %H:%M:%S') if customer.updated_at else ''
+            ]
+            ws.append(row)
+            
+        # Format cells
+        for row_idx in range(2, ws.max_row + 1):
+            for col_idx in range(1, len(headers) + 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.font = data_font
+                cell.border = thin_border
+                
+                # Alignments
+                if col_idx in [2, 3, 4, 7, 8]: # Category, Phone numbers, Dates
+                    cell.alignment = Alignment(horizontal="center")
+                else:
+                    cell.alignment = Alignment(horizontal="left")
+                    
+        # Adjust column widths dynamically
+        for col in ws.columns:
+            max_len = 0
+            for cell in col:
+                val_str = str(cell.value or '')
+                if len(val_str) > max_len:
+                    max_len = len(val_str)
+            col_letter = openpyxl.utils.get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+            
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        filename = f"Customer_Master_Export_{current_date}.xlsx"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        wb.save(response)
+        
+        # Audit Log support
+        from authentication.utils import log_action
+        log_action(
+            user=request.user,
+            action="EXPORT",
+            target="All Customers Excel",
+            module="Customer Masters"
+        )
+        
+        return response
+
     @action(detail=False, methods=['get'], url_path='download-template')
     def download_template(self, request):
         import openpyxl
