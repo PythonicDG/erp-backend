@@ -16,15 +16,15 @@ from .serializers import (
 )
 
 from .mixins import AuditLogMixin
-from .permissions import IsAdmin
+from .permissions import IsAdmin, IsAdminOrSupervisor
 
 class TeamViewSet(AuditLogMixin, viewsets.ModelViewSet):
     """
-    ViewSet for managing team members (Admins only).
+    ViewSet for managing team members (Admins and Supervisors).
     """
     queryset = User.objects.all().order_by('-created_at')
     serializer_class = TeamMemberSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrSupervisor]
     filterset_fields = ['role', 'is_active', 'department']
     search_fields = ['first_name', 'last_name', 'email', 'employee_id']
     audit_module = "Team"
