@@ -2,8 +2,8 @@ from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Project, CustomerMaster
-from .serializers import ProjectSerializer, CustomerMasterSerializer
+from .models import Project, CustomerMaster, StandardMaster
+from .serializers import ProjectSerializer, CustomerMasterSerializer, StandardMasterSerializer
 from .permissions import CanCreateProject
 from authentication.mixins import AuditLogMixin
 from authentication.permissions import IsAdmin
@@ -833,6 +833,355 @@ class CustomerMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
         from django.db.models import Count
         stats = Project.objects.values('status').annotate(count=Count('id'))
         return Response(stats)
+
+
+class StandardMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
+    queryset = StandardMaster.objects.all()
+    serializer_class = StandardMasterSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter, DjangoFilterBackend]
+    filterset_fields = ['category', 'status', 'release_year']
+    search_fields = ['standard_number', 'standard_name']
+    ordering_fields = ['standard_number', 'release_year', 'created_at']
+    ordering = ['standard_number']
+    permission_classes = [permissions.IsAuthenticated]
+    audit_module = "Standards Master"
+
+    def get_audit_target(self, instance):
+        return f"Standard: {instance.standard_number} - {instance.standard_name}"
+
+    def get_permissions(self):
+        # Allow safe GET actions for all authenticated users to read active list (e.g., for dropdown selection)
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        # Full CRUD/Bulk operations restricted to ADMIN role only
+        from .permissions import IsAdminUser
+        return [permissions.IsAuthenticated(), IsAdminUser()]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = StandardMaster.objects.all()
+        # If user is not Admin, restrict lists to Active status only
+        if user and user.role != 'ADMIN':
+            queryset = queryset.filter(status='Active')
+        return queryset
+
+    @action(detail=False, methods=['get'], url_path='export')
+    def export_excel(self, request):
+        import openpyxl
+        from django.http import HttpResponse
+        from datetime import datetime
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Standards Master Export"
+        
+        header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+        header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+        data_font = Font(name="Arial", size=10)
+        
+        thin_border = Border(
+            left=Side(style='thin', color='E2E8F0'),
+            right=Side(style='thin', color='E2E8F0'),
+            top=Side(style='thin', color='E2E8F0'),
+            bottom=Side(style='thin', color='E2E8F0')
+        )
+        
+        headers = [
+            "Standard Number", "Standard Name", "Revision / Edition", 
+            "Release Year", "Category", "Description", "Status", 
+            "Date Created", "Last Updated"
+        ]
+        
+        ws.append(headers)
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+            
+        for std in queryset:
+            row = [
+                std.standard_number,
+                std.standard_name,
+                std.revision or '',
+                std.release_year or '',
+                std.category,
+                std.description or '',
+                std.status,
+                std.created_at.strftime('%Y-%m-%d %H:%M:%S') if std.created_at else '',
+                std.updated_at.strftime('%Y-%m-%d %H:%M:%S') if std.updated_at else ''
+            ]
+            ws.append(row)
+            
+        for row_idx in range(2, ws.max_row + 1):
+            for col_idx in range(1, len(headers) + 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.font = data_font
+                cell.border = thin_border
+                
+                if col_idx in [3, 4, 5, 7, 8, 9]: # Revision, Year, Category, Status, Dates
+                    cell.alignment = Alignment(horizontal="center")
+                else:
+                    cell.alignment = Alignment(horizontal="left")
+                    
+        for col in ws.columns:
+            max_len = 0
+            for cell in col:
+                val_str = str(cell.value or '')
+                if len(val_str) > max_len:
+                    max_len = len(val_str)
+            col_letter = openpyxl.utils.get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+            
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        filename = f"Standard_Master_Export_{current_date}.xlsx"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        wb.save(response)
+        
+        from authentication.utils import log_action
+        log_action(
+            user=request.user,
+            action="EXPORT",
+            target="All Standards Excel",
+            module="Standards Master"
+        )
+        
+        return response
+
+    @action(detail=False, methods=['get'], url_path='download-template')
+    def download_template(self, request):
+        import openpyxl
+        from django.http import HttpResponse
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Standards Template"
+        
+        headers = [
+            "Standard Number", "Standard Name", "Revision / Edition", 
+            "Release Year", "Category", "Description", "Status"
+        ]
+        ws.append(headers)
+        
+        sample_rows = [
+            ["IEC 61439-1", "Low-voltage switchgear and controlgear assemblies", "Edition 3.0", 2020, "IEC", "General rules and guidelines for low-voltage switchboard designs.", "Active"],
+            ["ISO 9001", "Quality management systems - Requirements", "Fifth Edition", 2015, "ISO", "Standard for quality management guidelines and execution.", "Active"],
+            ["MIL-STD-810G", "Environmental Engineering Considerations and Laboratory Tests", "Rev G", 2008, "Defence", "Military standard for environmental conditions testing.", "Active"]
+        ]
+        for row in sample_rows:
+            ws.append(row)
+            
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = openpyxl.utils.get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 15)
+            
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response["Content-Disposition"] = 'attachment; filename="standards_bulk_upload_template.xlsx"'
+        wb.save(response)
+        return response
+
+    @action(detail=False, methods=['post'], url_path='bulk-upload')
+    def bulk_upload(self, request):
+        import openpyxl
+        from django.db import transaction
+        from authentication.system_models import AuditLog
+        
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        skip_duplicates = request.data.get('skip_duplicates', 'true').lower() == 'true'
+        
+        try:
+            wb = openpyxl.load_workbook(file_obj, data_only=True)
+            sheet = wb.active
+            rows = list(sheet.iter_rows(values_only=True))
+            if not rows:
+                return Response({"error": "Excel file is empty"}, status=status.HTTP_400_BAD_REQUEST)
+                
+            headers = [str(h).strip().lower() if h else "" for h in rows[0]]
+            
+            num_idx = -1
+            name_idx = -1
+            rev_idx = -1
+            year_idx = -1
+            cat_idx = -1
+            desc_idx = -1
+            status_idx = -1
+
+            for idx, h in enumerate(headers):
+                if h in ['standard number', 'standard_number', 'number']:
+                    num_idx = idx
+                elif h in ['standard name', 'standard_name', 'name']:
+                    name_idx = idx
+                elif h in ['revision', 'edition', 'revision / edition', 'revision_edition']:
+                    rev_idx = idx
+                elif h in ['release year', 'release_year', 'year']:
+                    year_idx = idx
+                elif h in ['category', 'standard category', 'standard_category']:
+                    cat_idx = idx
+                elif h in ['description', 'notes', 'remarks']:
+                    desc_idx = idx
+                elif h in ['status', 'active', 'state']:
+                    status_idx = idx
+                    
+            missing = []
+            if num_idx == -1: missing.append("Standard Number")
+            if name_idx == -1: missing.append("Standard Name")
+            if cat_idx == -1: missing.append("Category")
+
+            if missing:
+                return Response({
+                    "error": f"Missing required columns: {', '.join(missing)}. Please use the downloadable template."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            success_count = 0
+            skipped_count = 0
+            failure_count = 0
+            errors = []
+            skipped = []
+            successes = []
+
+            # Allowed categories list to validate Category
+            allowed_cats = ['ISO', 'IEC', 'Marine IEC', 'IP', 'EMC', 'Defence']
+
+            for row_num, row in enumerate(rows[1:], start=2):
+                if not any(cell is not None and str(cell).strip() != "" for cell in row):
+                    continue
+                    
+                std_num = ""
+                try:
+                    std_num = str(row[num_idx]).strip() if row[num_idx] is not None else ""
+                    std_name = str(row[name_idx]).strip() if row[name_idx] is not None else ""
+                    cat_val = str(row[cat_idx]).strip() if row[cat_idx] is not None else ""
+                    
+                    if not std_num:
+                        errors.append({
+                            "row": row_num,
+                            "standard_number": "N/A",
+                            "error_message": "Standard Number is required"
+                        })
+                        failure_count += 1
+                        continue
+                        
+                    if not std_name:
+                        errors.append({
+                            "row": row_num,
+                            "standard_number": std_num,
+                            "error_message": "Standard Name is required"
+                        })
+                        failure_count += 1
+                        continue
+                        
+                    if not cat_val:
+                        errors.append({
+                            "row": row_num,
+                            "standard_number": std_num,
+                            "error_message": "Category is required"
+                        })
+                        failure_count += 1
+                        continue
+
+                    # Validate category choice
+                    match_cat = next((c for c in allowed_cats if c.lower() == cat_val.lower()), None)
+                    if not match_cat:
+                        errors.append({
+                            "row": row_num,
+                            "standard_number": std_num,
+                            "error_message": f"Invalid category '{cat_val}'. Must be one of: {', '.join(allowed_cats)}"
+                        })
+                        failure_count += 1
+                        continue
+
+                    rev_val = str(row[rev_idx]).strip() if (rev_idx != -1 and row[rev_idx] is not None) else ""
+                    
+                    year_val = None
+                    if year_idx != -1 and row[year_idx] is not None:
+                        try:
+                            year_val = int(float(str(row[year_idx]).strip()))
+                        except:
+                            errors.append({
+                                "row": row_num,
+                                "standard_number": std_num,
+                                "error_message": f"Invalid year value '{row[year_idx]}'. Must be a whole number."
+                            })
+                            failure_count += 1
+                            continue
+
+                    desc_val = str(row[desc_idx]).strip() if (desc_idx != -1 and row[desc_idx] is not None) else ""
+                    
+                    status_val = "Active"
+                    if status_idx != -1 and row[status_idx] is not None:
+                        raw_status = str(row[status_idx]).strip().capitalize()
+                        if raw_status in ["Active", "Inactive"]:
+                            status_val = raw_status
+
+                    if skip_duplicates:
+                        existing = StandardMaster.objects.filter(standard_number__iexact=std_num).first()
+                        if existing:
+                            skipped.append({
+                                "row": row_num,
+                                "standard_number": std_num,
+                                "reason": f"Standard with number '{std_num}' already exists."
+                            })
+                            skipped_count += 1
+                            continue
+                            
+                    with transaction.atomic():
+                        standard_instance, created = StandardMaster.objects.update_or_create(
+                            standard_number=std_num,
+                            defaults={
+                                "standard_name": std_name,
+                                "revision": rev_val,
+                                "release_year": year_val,
+                                "category": match_cat,
+                                "description": desc_val,
+                                "status": status_val
+                            }
+                        )
+                        
+                        AuditLog.objects.create(
+                            user=request.user,
+                            action="Standard Created/Updated via Bulk Upload",
+                            target=f"Standard: {standard_instance.standard_number}",
+                            module="Standards Master",
+                            status="SUCCESS"
+                        )
+                        
+                    successes.append(std_num)
+                    success_count += 1
+                    
+                except Exception as e:
+                    errors.append({
+                        "row": row_num,
+                        "standard_number": std_num if std_num else "Unknown",
+                        "error_message": f"Unexpected error: {str(e)}"
+                    })
+                    failure_count += 1
+                    
+            return Response({
+                "success_count": success_count,
+                "skipped_count": skipped_count,
+                "failure_count": failure_count,
+                "total_processed": len(rows) - 1,
+                "errors": errors,
+                "skipped": skipped,
+                "successes": successes
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"error": f"Failed to parse Excel file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
 
 class DashboardViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]

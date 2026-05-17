@@ -1,10 +1,15 @@
 from rest_framework import serializers
-from .models import Project, CustomerMaster
+from .models import Project, CustomerMaster, StandardMaster
 from .services import ProjectService
 
 class CustomerMasterSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerMaster
+        fields = '__all__'
+
+class StandardMasterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StandardMaster
         fields = '__all__'
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -13,13 +18,14 @@ class ProjectSerializer(serializers.ModelSerializer):
     current_stage = serializers.SerializerMethodField()
     created_by_name = serializers.ReadOnlyField(source='created_by.get_full_name')
     customer_details = CustomerMasterSerializer(source='customer', read_only=True)
+    standard_details = StandardMasterSerializer(source='standard', read_only=True)
  
     class Meta:
         model = Project
         fields = [
             'id', 'pid', 'name', 'customer', 'customer_details', 'customer_name', 'customer_part_no', 
             'pcepl_part_no', 'project_type', 'inspection_authority', 
-            'applicable_standard', 'date_received', 'month_received', 
+            'applicable_standard', 'standard', 'standard_details', 'date_received', 'month_received', 
             'target_completion_date', 'status', 'priority', 'description', 'created_at', 'updated_at',
             'created_by', 'created_by_name', 'current_stage', 'assigned_employee'
         ]
