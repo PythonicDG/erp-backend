@@ -29,6 +29,346 @@ class ProjectViewSet(AuditLogMixin, viewsets.ModelViewSet):
         serializer.save(created_by=self.request.user)
         super().perform_create(serializer)
 
+    @action(detail=False, methods=['get'], url_path='download-template')
+    def download_template(self, request):
+        import openpyxl
+        from django.http import HttpResponse
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Projects Template"
+        
+        # Headers
+        headers = [
+            "Project Name", "Customer Name", "Customer Part Number", 
+            "PCEPL Part Number", "Inspection Authority", "Applicable Standard", 
+            "Date Received", "Target Completion Date", "Status", "Priority", 
+            "Assigned To", "Description"
+        ]
+        ws.append(headers)
+        
+        # Sample Data
+        sample_rows = [
+            [
+                "Junction Box CSL-WATERJET", "Larsen & Toubro", "PAAG464305", 
+                "30071850", "Internal QA", "IEC 61439", "2026-05-17", 
+                "2026-06-30", "Open", "High", "employee@example.com", 
+                "Standard Junction Box assembly and wiring."
+            ],
+            [
+                "CSL Panel Maintenance", "Cochin Shipyard", "CSL-9988", 
+                "", "LRS", "IEC 60947", "2026-05-20", 
+                "", "Draft", "Medium", "", "Annual maintenance and QA inspection."
+            ]
+        ]
+        for row in sample_rows:
+            ws.append(row)
+            
+        # Adjust column widths
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = openpyxl.utils.get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 15)
+            
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response["Content-Disposition"] = 'attachment; filename="projects_bulk_upload_template.xlsx"'
+        wb.save(response)
+        return response
+
+    @action(detail=False, methods=['post'], url_path='bulk-upload')
+    def bulk_upload(self, request):
+        import openpyxl
+        from datetime import datetime, date, timedelta
+        from django.db import transaction
+        from django.contrib.auth import get_user_model
+        
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        skip_duplicates = request.data.get('skip_duplicates', 'true').lower() == 'true'
+        
+        try:
+            wb = openpyxl.load_workbook(file_obj, data_only=True)
+            sheet = wb.active
+            rows = list(sheet.iter_rows(values_only=True))
+            if not rows:
+                return Response({"error": "Excel file is empty"}, status=status.HTTP_400_BAD_REQUEST)
+                
+            headers = [str(h).strip().lower() if h else "" for h in rows[0]]
+            
+            name_idx = -1
+            client_idx = -1
+            cust_part_idx = -1
+            pcepl_part_idx = -1
+            inspect_auth_idx = -1
+            standard_idx = -1
+            start_idx = -1
+            end_idx = -1
+            status_idx = -1
+            priority_idx = -1
+            assigned_idx = -1
+            desc_idx = -1
+
+            for idx, h in enumerate(headers):
+                if h in ['project name', 'project_name', 'name', 'project']:
+                    name_idx = idx
+                elif h in ['customer name', 'customer_name', 'client name', 'client_name', 'client', 'customer']:
+                    client_idx = idx
+                elif h in ['customer part number', 'customer_part_number', 'customer part no', 'customer_part_no']:
+                    cust_part_idx = idx
+                elif h in ['pcepl part number', 'pcepl_part_number', 'pcepl part no', 'pcepl_part_no']:
+                    pcepl_part_idx = idx
+                elif h in ['inspection authority', 'inspection_authority', 'inspection authority/agency']:
+                    inspect_auth_idx = idx
+                elif h in ['applicable standard', 'applicable_standard', 'standard']:
+                    standard_idx = idx
+                elif h in ['date received', 'date_received', 'start date', 'start_date', 'start']:
+                    start_idx = idx
+                elif h in ['target completion date', 'target_completion_date', 'end date', 'end_date', 'end']:
+                    end_idx = idx
+                elif h in ['status']:
+                    status_idx = idx
+                elif h in ['priority']:
+                    priority_idx = idx
+                elif h in ['assigned to', 'assigned_to', 'assigned employee', 'assigned_employee', 'assigned']:
+                    assigned_idx = idx
+                elif h in ['description', 'desc', 'remarks', 'notes']:
+                    desc_idx = idx
+                    
+            missing = []
+            if name_idx == -1: missing.append("Project Name")
+            if client_idx == -1: missing.append("Customer Name")
+            if start_idx == -1: missing.append("Date Received")
+
+            if missing:
+                return Response({
+                    "error": f"Missing required columns: {', '.join(missing)}. Please use the downloadable template."
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            def parse_date(val):
+                if not val:
+                    return None
+                if isinstance(val, (date, datetime)):
+                    return val.date() if isinstance(val, datetime) else val
+                # If string, try multiple formats
+                val_str = str(val).strip()
+                for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%Y/%m/%d'):
+                    try:
+                        return datetime.strptime(val_str, fmt).date()
+                    except ValueError:
+                        continue
+                # Try parsing Excel float serial date
+                try:
+                    if val_str.replace('.', '', 1).isdigit():
+                        serial = float(val_str)
+                        return (datetime(1899, 12, 30) + timedelta(days=serial)).date()
+                except Exception:
+                    pass
+                raise ValueError(f"Invalid date format: {val}")
+
+            success_count = 0
+            skipped_count = 0
+            failure_count = 0
+            errors = []
+            skipped = []
+            successes = []
+            User = get_user_model()
+            row_num = 1 # fallback
+
+            for row_num, row in enumerate(rows[1:], start=2):
+                # Check if row is empty
+                if not any(cell is not None and str(cell).strip() != "" for cell in row):
+                    continue
+                    
+                proj_name = ""
+                client_name = ""
+                try:
+                    proj_name = str(row[name_idx]).strip() if row[name_idx] is not None else ""
+                    client_name = str(row[client_idx]).strip() if row[client_idx] is not None else ""
+                    
+                    if not proj_name:
+                        errors.append({
+                            "row": row_num,
+                            "project_name": "N/A",
+                            "error_message": "Project Name is required"
+                        })
+                        failure_count += 1
+                        continue
+                        
+                    if not client_name:
+                        errors.append({
+                            "row": row_num,
+                            "project_name": proj_name,
+                            "error_message": "Customer Name is required"
+                        })
+                        failure_count += 1
+                        continue
+                        
+                    start_date_val = row[start_idx]
+                    if start_date_val is None or str(start_date_val).strip() == "":
+                        errors.append({
+                            "row": row_num,
+                            "project_name": proj_name,
+                            "error_message": "Date Received is required"
+                        })
+                        failure_count += 1
+                        continue
+                        
+                    try:
+                        date_received = parse_date(start_date_val)
+                    except ValueError as ve:
+                        errors.append({
+                            "row": row_num,
+                            "project_name": proj_name,
+                            "error_message": str(ve)
+                        })
+                        failure_count += 1
+                        continue
+                        
+                    target_completion_date = None
+                    if end_idx != -1 and row[end_idx] is not None and str(row[end_idx]).strip() != "":
+                        try:
+                            target_completion_date = parse_date(row[end_idx])
+                        except ValueError as ve:
+                            errors.append({
+                                "row": row_num,
+                                "project_name": proj_name,
+                                "error_message": f"Target Completion Date error: {str(ve)}"
+                            })
+                            failure_count += 1
+                            continue
+                            
+                    status_val = "Open"
+                    if status_idx != -1 and row[status_idx] is not None:
+                        status_str = str(row[status_idx]).strip()
+                        from .models import ProjectStatus
+                        matched = False
+                        for choice_val, choice_label in ProjectStatus.choices:
+                            if status_str.lower() == choice_val.lower() or status_str.lower() == choice_label.lower():
+                                status_val = choice_val
+                                matched = True
+                                break
+                        if not matched:
+                            status_val = "Open"
+                            
+                    priority_val = ""
+                    if priority_idx != -1 and row[priority_idx] is not None:
+                        priority_val = str(row[priority_idx]).strip()
+                        
+                    desc_val = ""
+                    if desc_idx != -1 and row[desc_idx] is not None:
+                        desc_val = str(row[desc_idx]).strip()
+                        
+                    cust_part_val = ""
+                    if cust_part_idx != -1 and row[cust_part_idx] is not None:
+                        cust_part_val = str(row[cust_part_idx]).strip()
+                        
+                    pcepl_part_val = ""
+                    if pcepl_part_idx != -1 and row[pcepl_part_idx] is not None:
+                        pcepl_part_val = str(row[pcepl_part_idx]).strip()
+                        
+                    inspect_auth_val = ""
+                    if inspect_auth_idx != -1 and row[inspect_auth_idx] is not None:
+                        inspect_auth_val = str(row[inspect_auth_idx]).strip()
+                        
+                    standard_val = ""
+                    if standard_idx != -1 and row[standard_idx] is not None:
+                        standard_val = str(row[standard_idx]).strip()
+
+                    customer = CustomerMaster.objects.filter(name__iexact=client_name).first()
+                    if not customer:
+                        customer = CustomerMaster.objects.create(
+                            name=client_name,
+                            email=f"{client_name.lower().replace(' ', '')}@example.com",
+                            mobile_number="0000000000",
+                            remarks="Auto-created during bulk upload"
+                        )
+                        
+                    if skip_duplicates:
+                        existing_project = Project.objects.filter(name__iexact=proj_name, customer=customer).first()
+                        if existing_project:
+                            skipped.append({
+                                "row": row_num,
+                                "project_name": proj_name,
+                                "reason": f"Project '{proj_name}' already exists for client '{client_name}'"
+                            })
+                            skipped_count += 1
+                            continue
+                            
+                    assigned_employee = None
+                    if assigned_idx != -1 and row[assigned_idx] is not None:
+                        assigned_to_str = str(row[assigned_idx]).strip()
+                        if assigned_to_str:
+                            if '@' in assigned_to_str:
+                                assigned_employee = User.objects.filter(email__iexact=assigned_to_str).first()
+                            else:
+                                parts = assigned_to_str.split(' ', 1)
+                                if len(parts) == 2:
+                                    assigned_employee = User.objects.filter(
+                                        first_name__iexact=parts[0],
+                                        last_name__iexact=parts[1]
+                                    ).first()
+                                if not assigned_employee:
+                                    assigned_employee = User.objects.filter(
+                                        first_name__iexact=assigned_to_str
+                                    ).first()
+                                    
+                    with transaction.atomic():
+                        project = Project.objects.create(
+                            name=proj_name,
+                            customer=customer,
+                            customer_name=customer.name,
+                            customer_part_no=cust_part_val,
+                            pcepl_part_no=pcepl_part_val,
+                            inspection_authority=inspect_auth_val,
+                            applicable_standard=standard_val,
+                            date_received=date_received,
+                            target_completion_date=target_completion_date,
+                            status=status_val,
+                            priority=priority_val,
+                            description=desc_val,
+                            assigned_employee=assigned_employee,
+                            created_by=request.user,
+                            project_type="OTHER"
+                        )
+                        
+                        from .services import ProjectService
+                        ProjectService.initialize_workflow(project)
+                        
+                        ProjectService.log_activity(
+                            project,
+                            request.user,
+                            "Project Created via Bulk Upload",
+                            {"status": project.status}
+                        )
+                        
+                    successes.append(proj_name)
+                    success_count += 1
+                    
+                except Exception as e:
+                    errors.append({
+                        "row": row_num,
+                        "project_name": proj_name if proj_name else "Unknown",
+                        "error_message": f"Unexpected error: {str(e)}"
+                    })
+                    failure_count += 1
+                    
+            return Response({
+                "success_count": success_count,
+                "skipped_count": skipped_count,
+                "failure_count": failure_count,
+                "total_processed": len(rows) - 1,
+                "errors": errors,
+                "skipped": skipped,
+                "successes": successes
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"error": f"Failed to parse Excel file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
 class CustomerMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = CustomerMaster.objects.all()
     serializer_class = CustomerMasterSerializer

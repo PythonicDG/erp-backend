@@ -77,6 +77,8 @@ class Project(models.Model):
         null=True,
         related_name='assigned_projects'
     )
+    priority = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("Priority"))
+    description = models.TextField(blank=True, null=True, verbose_name=_("Description"))
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

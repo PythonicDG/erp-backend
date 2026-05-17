@@ -20,8 +20,8 @@ class ProjectSerializer(serializers.ModelSerializer):
             'id', 'pid', 'name', 'customer', 'customer_details', 'customer_name', 'customer_part_no', 
             'pcepl_part_no', 'project_type', 'inspection_authority', 
             'applicable_standard', 'date_received', 'month_received', 
-            'target_completion_date', 'status', 'created_at', 'updated_at',
-            'created_by', 'created_by_name', 'current_stage'
+            'target_completion_date', 'status', 'priority', 'description', 'created_at', 'updated_at',
+            'created_by', 'created_by_name', 'current_stage', 'assigned_employee'
         ]
         read_only_fields = ['created_by']
  
