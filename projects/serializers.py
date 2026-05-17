@@ -25,6 +25,21 @@ class ProjectSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_by']
  
+    def validate_project_type(self, value):
+        valid_types = [
+            'OTHER', 'LCP', 'EWH', 'RCP', 'SP', 'AWH', 
+            'JB', 'BATTERY CABLE', 'DROP IN PLATE', 'BATTERY BOX'
+        ]
+        val_upper = str(value).strip().upper()
+        if val_upper not in valid_types:
+            # Maintain compatibility for existing records
+            if val_upper in ['STANDARD', 'CUSTOM', 'MAINTENANCE']:
+                return val_upper
+            raise serializers.ValidationError(
+                f"Invalid project type. Allowed types are: {', '.join(valid_types)}"
+            )
+        return val_upper
+
     def get_current_stage(self, obj):
         from workflow.models import StageInstance
         # Get the first stage that is not approved

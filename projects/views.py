@@ -7,6 +7,7 @@ from .serializers import ProjectSerializer, CustomerMasterSerializer
 from .permissions import CanCreateProject
 from authentication.mixins import AuditLogMixin
 from authentication.permissions import IsAdmin
+from django.db.models import Q
 
 class ProjectViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = Project.objects.all().select_related('customer').prefetch_related(
@@ -387,6 +388,213 @@ class CustomerMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
         if self.action == 'create':
             return [CanCreateProject()]
         return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=['get'], url_path='download-template')
+    def download_template(self, request):
+        import openpyxl
+        from django.http import HttpResponse
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Customers Template"
+        
+        # Headers
+        headers = [
+            "Customer Name", "Email Address", "Category", 
+            "Mobile Number", "Alternate Mobile", "Remarks / Notes"
+        ]
+        ws.append(headers)
+        
+        # Sample Data
+        sample_rows = [
+            [
+                "Larsen & Toubro", "larsen.toubro@example.com", "A-Category", 
+                "9876543210", "0222456789", "Key client for heavy electrical junction boxes."
+            ],
+            [
+                "Cochin Shipyard", "cochin.shipyard@example.com", "B-Category", 
+                "8887776665", "", "Handles naval projects panel supply."
+            ]
+        ]
+        for row in sample_rows:
+            ws.append(row)
+            
+        # Adjust column widths
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = openpyxl.utils.get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 15)
+            
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response["Content-Disposition"] = 'attachment; filename="customers_bulk_upload_template.xlsx"'
+        wb.save(response)
+        return response
+
+    @action(detail=False, methods=['post'], url_path='bulk-upload')
+    def bulk_upload(self, request):
+        import openpyxl
+        from django.db import transaction
+        from authentication.system_models import AuditLog
+        
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        skip_duplicates = request.data.get('skip_duplicates', 'true').lower() == 'true'
+        
+        try:
+            wb = openpyxl.load_workbook(file_obj, data_only=True)
+            sheet = wb.active
+            rows = list(sheet.iter_rows(values_only=True))
+            if not rows:
+                return Response({"error": "Excel file is empty"}, status=status.HTTP_400_BAD_REQUEST)
+                
+            headers = [str(h).strip().lower() if h else "" for h in rows[0]]
+            
+            name_idx = -1
+            email_idx = -1
+            cat_idx = -1
+            mobile_idx = -1
+            alt_mobile_idx = -1
+            remarks_idx = -1
+
+            for idx, h in enumerate(headers):
+                if h in ['customer name', 'customer_name', 'name', 'customer']:
+                    name_idx = idx
+                elif h in ['email address', 'email_address', 'email']:
+                    email_idx = idx
+                elif h in ['category', 'customer category', 'customer_category']:
+                    cat_idx = idx
+                elif h in ['mobile number', 'mobile_number', 'mobile', 'phone']:
+                    mobile_idx = idx
+                elif h in ['alternate mobile', 'alternate_mobile', 'alternate mobile number', 'alternate_mobile_number', 'alt mobile', 'alt_mobile']:
+                    alt_mobile_idx = idx
+                elif h in ['remarks / notes', 'remarks', 'notes', 'remarks_notes', 'remarks/notes', 'remark']:
+                    remarks_idx = idx
+                    
+            missing = []
+            if name_idx == -1: missing.append("Customer Name")
+            if email_idx == -1: missing.append("Email Address")
+            if mobile_idx == -1: missing.append("Mobile Number")
+
+            if missing:
+                return Response({
+                    "error": f"Missing required columns: {', '.join(missing)}. Please use the downloadable template."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            success_count = 0
+            skipped_count = 0
+            failure_count = 0
+            errors = []
+            skipped = []
+            successes = []
+
+            for row_num, row in enumerate(rows[1:], start=2):
+                # Check if row is empty
+                if not any(cell is not None and str(cell).strip() != "" for cell in row):
+                    continue
+                    
+                cust_name = ""
+                try:
+                    cust_name = str(row[name_idx]).strip() if row[name_idx] is not None else ""
+                    email_val = str(row[email_idx]).strip() if row[email_idx] is not None else ""
+                    mobile_val = str(row[mobile_idx]).strip() if row[mobile_idx] is not None else ""
+                    
+                    if not cust_name:
+                        errors.append({
+                            "row": row_num,
+                            "customer_name": "N/A",
+                            "error_message": "Customer Name is required"
+                        })
+                        failure_count += 1
+                        continue
+                        
+                    if not email_val:
+                        errors.append({
+                            "row": row_num,
+                            "customer_name": cust_name,
+                            "error_message": "Email Address is required"
+                        })
+                        failure_count += 1
+                        continue
+                        
+                    if not mobile_val:
+                        errors.append({
+                            "row": row_num,
+                            "customer_name": cust_name,
+                            "error_message": "Mobile Number is required"
+                        })
+                        failure_count += 1
+                        continue
+
+                    category_val = ""
+                    if cat_idx != -1 and row[cat_idx] is not None:
+                        category_val = str(row[cat_idx]).strip()
+                        
+                    alt_mobile_val = ""
+                    if alt_mobile_idx != -1 and row[alt_mobile_idx] is not None:
+                        alt_mobile_val = str(row[alt_mobile_idx]).strip()
+                        
+                    remarks_val = ""
+                    if remarks_idx != -1 and row[remarks_idx] is not None:
+                        remarks_val = str(row[remarks_idx]).strip()
+                        
+                    if skip_duplicates:
+                        existing_customer = CustomerMaster.objects.filter(
+                            Q(name__iexact=cust_name) | Q(email__iexact=email_val)
+                        ).first()
+                        if existing_customer:
+                            skipped.append({
+                                "row": row_num,
+                                "customer_name": cust_name,
+                                "reason": f"Customer with name '{cust_name}' or email '{email_val}' already exists."
+                            })
+                            skipped_count += 1
+                            continue
+                            
+                    with transaction.atomic():
+                        customer = CustomerMaster.objects.create(
+                            name=cust_name,
+                            email=email_val,
+                            category=category_val,
+                            mobile_number=mobile_val,
+                            alternate_mobile_number=alt_mobile_val,
+                            remarks=remarks_val
+                        )
+                        
+                        AuditLog.objects.create(
+                            user=request.user,
+                            action="Customer Created via Bulk Upload",
+                            target=f"Customer: {customer.name}",
+                            module="Customer Masters",
+                            status="SUCCESS"
+                        )
+                        
+                    successes.append(cust_name)
+                    success_count += 1
+                    
+                except Exception as e:
+                    errors.append({
+                        "row": row_num,
+                        "customer_name": cust_name if cust_name else "Unknown",
+                        "error_message": f"Unexpected error: {str(e)}"
+                    })
+                    failure_count += 1
+                    
+            return Response({
+                "success_count": success_count,
+                "skipped_count": skipped_count,
+                "failure_count": failure_count,
+                "total_processed": len(rows) - 1,
+                "errors": errors,
+                "skipped": skipped,
+                "successes": successes
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"error": f"Failed to parse Excel file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'])
     def sync_all_statuses(self, request):
