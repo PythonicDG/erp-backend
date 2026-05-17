@@ -78,6 +78,111 @@ class ProjectViewSet(AuditLogMixin, viewsets.ModelViewSet):
         wb.save(response)
         return response
 
+    @action(detail=False, methods=['get'], url_path='export')
+    def export_excel(self, request):
+        import openpyxl
+        from django.http import HttpResponse
+        from datetime import datetime
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        
+        # Apply standard queryset filtering (search & filters)
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Project Master Export"
+        
+        # Premium Styling
+        header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid") # Deep navy
+        header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+        data_font = Font(name="Arial", size=10)
+        
+        thin_border = Border(
+            left=Side(style='thin', color='E2E8F0'),
+            right=Side(style='thin', color='E2E8F0'),
+            top=Side(style='thin', color='E2E8F0'),
+            bottom=Side(style='thin', color='E2E8F0')
+        )
+        
+        headers = [
+            "Project ID (PID)", "Project Name", "Customer Name", "Customer Part Number", 
+            "PCEPL Part Number", "Inspection Authority", "Applicable Standard", 
+            "Date Received", "Target Completion Date", "Status", "Priority", 
+            "Assigned Employee", "Supervisor", "Created By", "Date Created"
+        ]
+        
+        # Write headers
+        ws.append(headers)
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+            
+        # Write data
+        for project in queryset:
+            row = [
+                project.pid,
+                project.name,
+                project.customer.name if project.customer else project.customer_name or '',
+                project.customer_part_no or '',
+                project.pcepl_part_no or '',
+                project.inspection_authority or '',
+                project.applicable_standard or '',
+                project.date_received.strftime('%Y-%m-%d') if project.date_received else '',
+                project.target_completion_date.strftime('%Y-%m-%d') if project.target_completion_date else '',
+                project.status,
+                project.priority or '',
+                project.assigned_employee.full_name if project.assigned_employee else '',
+                project.supervisor.full_name if project.supervisor else '',
+                project.created_by.full_name if project.created_by else '',
+                project.created_at.strftime('%Y-%m-%d %H:%M:%S') if project.created_at else ''
+            ]
+            ws.append(row)
+            
+        # Format data cells
+        for row_idx in range(2, ws.max_row + 1):
+            for col_idx in range(1, len(headers) + 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.font = data_font
+                cell.border = thin_border
+                
+                # Alignments
+                if col_idx in [1, 8, 9, 10, 11, 15]: # PID, Dates, Status, Priority
+                    cell.alignment = Alignment(horizontal="center")
+                else:
+                    cell.alignment = Alignment(horizontal="left")
+                    
+        # Adjust column widths dynamically
+        for col in ws.columns:
+            max_len = 0
+            for cell in col:
+                val_str = str(cell.value or '')
+                if len(val_str) > max_len:
+                    max_len = len(val_str)
+            col_letter = openpyxl.utils.get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+            
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        filename = f"Project_Master_Export_{current_date}.xlsx"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        wb.save(response)
+        
+        # Log action for audit logs
+        from authentication.utils import log_action
+        log_action(
+            user=request.user,
+            action="EXPORT",
+            target="All Projects Excel",
+            module="Projects"
+        )
+        
+        return response
+
     @action(detail=False, methods=['post'], url_path='bulk-upload')
     def bulk_upload(self, request):
         import openpyxl
