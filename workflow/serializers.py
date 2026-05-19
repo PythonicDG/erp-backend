@@ -22,14 +22,14 @@ class StageTemplateSerializer(serializers.ModelSerializer):
         ]
 
 class StageSubmissionSerializer(serializers.ModelSerializer):
-    submitted_by_name = serializers.ReadOnlyField(source='submitted_by.get_full_name')
+    submitted_by_name = serializers.ReadOnlyField(source='submitted_by.full_name')
     
     class Meta:
         model = StageSubmission
         fields = ['id', 'submitted_by', 'submitted_by_name', 'data', 'status', 'remarks', 'submitted_at']
 
 class StageActivitySerializer(serializers.ModelSerializer):
-    performed_by_name = serializers.ReadOnlyField(source='performed_by.get_full_name')
+    performed_by_name = serializers.ReadOnlyField(source='performed_by.full_name')
     
     class Meta:
         model = StageActivity

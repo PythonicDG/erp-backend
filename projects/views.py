@@ -1671,6 +1671,10 @@ class ECNViewSet(AuditLogMixin, viewsets.ModelViewSet):
     def get_audit_target(self, instance):
         return f"ECN: {instance.ecn_number} for Project: {instance.project.name}"
 
+    def perform_create(self, serializer):
+        serializer.save(initiator=self.request.user)
+        super().perform_create(serializer)
+
     def get_permissions(self):
         if self.action == 'destroy':
             return [IsAdmin()]

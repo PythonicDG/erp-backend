@@ -24,7 +24,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     pid = serializers.CharField(read_only=True)
     month_received = serializers.CharField(read_only=True)
     current_stage = serializers.SerializerMethodField()
-    created_by_name = serializers.ReadOnlyField(source='created_by.get_full_name')
+    created_by_name = serializers.ReadOnlyField(source='created_by.full_name')
     customer_details = CustomerMasterSerializer(source='customer', read_only=True)
     standard_details = StandardMasterSerializer(source='standard', read_only=True)
     inspection_authority_details = InspectionAuthorityMasterSerializer(source='inspection_authority_fk', read_only=True)
@@ -103,9 +103,9 @@ class ECNSerializer(serializers.ModelSerializer):
     inspection_authority = serializers.ReadOnlyField(source='project.inspection_authority')
     
     # User full names for read
-    initiator_name = serializers.ReadOnlyField(source='initiator.get_full_name')
-    reviewed_by_name = serializers.ReadOnlyField(source='reviewed_by.get_full_name')
-    approved_by_name = serializers.ReadOnlyField(source='approved_by.get_full_name')
+    initiator_name = serializers.ReadOnlyField(source='initiator.full_name')
+    reviewed_by_name = serializers.ReadOnlyField(source='reviewed_by.full_name')
+    approved_by_name = serializers.ReadOnlyField(source='approved_by.full_name')
     
     # Project detail fields for list view
     project_pid = serializers.ReadOnlyField(source='project.pid')
