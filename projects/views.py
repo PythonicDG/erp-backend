@@ -2,8 +2,8 @@ from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster
-from .serializers import ProjectSerializer, CustomerMasterSerializer, StandardMasterSerializer, InspectionAuthorityMasterSerializer
+from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN
+from .serializers import ProjectSerializer, CustomerMasterSerializer, StandardMasterSerializer, InspectionAuthorityMasterSerializer, ECNSerializer
 from .permissions import CanCreateProject
 from authentication.mixins import AuditLogMixin
 from authentication.permissions import IsAdmin
@@ -1648,3 +1648,46 @@ class DashboardViewSet(viewsets.ViewSet):
             }
             
         return Response(dashboard_data)
+
+
+class ECNViewSet(AuditLogMixin, viewsets.ModelViewSet):
+    queryset = ECN.objects.all().select_related('project', 'project__customer', 'initiator', 'reviewed_by', 'approved_by')
+    serializer_class = ECNSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    
+    filterset_fields = ['status', 'project']
+    search_fields = ['ecn_number', 'project__name', 'project__customer__name', 'project__customer_name', 'raised_department']
+    ordering_fields = ['ecn_date', 'created_at', 'ecn_number']
+    ordering = ['-created_at']
+    audit_module = "ECN"
+
+    def get_audit_target(self, instance):
+        return f"ECN: {instance.ecn_number} for Project: {instance.project.name}"
+
+    def get_permissions(self):
+        if self.action == 'destroy':
+            return [IsAdmin()]
+        return [permissions.IsAuthenticated()]
+
+    def filter_queryset(self, queryset):
+        queryset = super().filter_queryset(queryset)
+        
+        # Filter by customer name (in case it is custom customer name string or fk relation name)
+        customer_name = self.request.query_params.get('customer_name', None)
+        if customer_name:
+            queryset = queryset.filter(
+                Q(project__customer__name__icontains=customer_name) | 
+                Q(project__customer_name__icontains=customer_name)
+            )
+            
+        # Filter by project name
+        project_name = self.request.query_params.get('project_name', None)
+        if project_name:
+            queryset = queryset.filter(project__name__icontains=project_name)
+
+        # Filter by date
+        date_val = self.request.query_params.get('date', None)
+        if date_val:
+            queryset = queryset.filter(ecn_date=date_val)
+            
+        return queryset

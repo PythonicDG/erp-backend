@@ -190,3 +190,105 @@ class InspectionAuthorityMaster(models.Model):
 
     def __str__(self):
         return f"{self.authority_id} - {self.name}"
+
+
+class ECNStatus(models.TextChoices):
+    DRAFT = 'Draft', _('Draft')
+    SUBMITTED = 'Submitted', _('Submitted')
+    REVIEWED = 'Reviewed', _('Reviewed')
+    APPROVED = 'Approved', _('Approved')
+    REJECTED = 'Rejected', _('Rejected')
+
+
+class ECN(models.Model):
+    ecn_number = models.CharField(max_length=50, unique=True, blank=True, verbose_name=_("ECN Number"))
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='ecns',
+        verbose_name=_("Project")
+    )
+    raised_department = models.CharField(max_length=255, verbose_name=_("ECN Raised Department"))
+    change_initiated_by = models.CharField(max_length=255, verbose_name=_("Change Initiated By"))
+    ecn_date = models.DateField(verbose_name=_("ECN Date"))
+    old_revision_no = models.CharField(max_length=50, verbose_name=_("Old Revision No."))
+    old_revision_date = models.DateField(blank=True, null=True, verbose_name=_("Old Revision Date"))
+    new_revision = models.CharField(max_length=50, verbose_name=_("New Revision"))
+    
+    # Section 2: Details of Change (List of dicts: [{'sr_no': 1, 'description': '...', 'reason': '...'}])
+    details_of_change = models.JSONField(default=list, blank=True, verbose_name=_("Details of Change"))
+    
+    # Section 3: Impact Analysis (List of dicts: [{'name': '...', 'selection': 'Yes/No', 'remarks': '...'}])
+    impact_analysis = models.JSONField(default=list, blank=True, verbose_name=_("Impact Analysis"))
+    
+    # Section 4: Action Plan (List of dicts: [{'action': '...', 'responsible': '...', 'target_date': 'YYYY-MM-DD', 'remark': '...'}])
+    action_plan = models.JSONField(default=list, blank=True, verbose_name=_("Action Plan"))
+    
+    # Section 5: Approvals
+    initiator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ecns_initiated',
+        verbose_name=_("Initiator")
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ecns_reviewed',
+        verbose_name=_("Reviewed By")
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ecns_approved',
+        verbose_name=_("Approved By")
+    )
+    
+    status = models.CharField(
+        max_length=20,
+        choices=ECNStatus.choices,
+        default=ECNStatus.DRAFT,
+        verbose_name=_("ECN Status")
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = _("Engineering Change Request")
+        verbose_name_plural = _("Engineering Change Requests")
+
+    def __str__(self):
+        return f"{self.ecn_number or 'Draft ECN'} - {self.project.name}"
+
+    def save(self, *args, **kwargs):
+        if not self.ecn_number:
+            from django.utils import timezone
+            date_val = self.ecn_date or timezone.now().date()
+            year = date_val.strftime('%y')
+            month = date_val.strftime('%m')
+            prefix = f"ECN/{year}/{month}/"
+            
+            # Find the last ECN that starts with this prefix
+            last_ecn = ECN.objects.filter(ecn_number__startswith=prefix).order_by('ecn_number').last()
+            
+            if last_ecn:
+                try:
+                    last_serial = int(last_ecn.ecn_number.split('/')[-1])
+                    new_serial = last_serial + 1
+                except (ValueError, IndexError):
+                    new_serial = 1
+            else:
+                new_serial = 1
+                
+            self.ecn_number = f"{prefix}{new_serial:03d}"
+            
+        super().save(*args, **kwargs)
+

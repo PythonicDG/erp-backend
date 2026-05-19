@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster
+from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN
 from .services import ProjectService
 
 class CustomerMasterSerializer(serializers.ModelSerializer):
@@ -91,3 +91,41 @@ class ProjectSerializer(serializers.ModelSerializer):
         )
         
         return project
+
+
+class ECNSerializer(serializers.ModelSerializer):
+    ecn_number = serializers.CharField(read_only=True)
+    customer_name = serializers.SerializerMethodField()
+    product_name = serializers.ReadOnlyField(source='project.name')
+    customer_part_no = serializers.ReadOnlyField(source='project.customer_part_no')
+    pcepl_part_no = serializers.ReadOnlyField(source='project.pcepl_part_no')
+    applicable_standard = serializers.ReadOnlyField(source='project.applicable_standard')
+    inspection_authority = serializers.ReadOnlyField(source='project.inspection_authority')
+    
+    # User full names for read
+    initiator_name = serializers.ReadOnlyField(source='initiator.get_full_name')
+    reviewed_by_name = serializers.ReadOnlyField(source='reviewed_by.get_full_name')
+    approved_by_name = serializers.ReadOnlyField(source='approved_by.get_full_name')
+    
+    # Project detail fields for list view
+    project_pid = serializers.ReadOnlyField(source='project.pid')
+    project_name = serializers.ReadOnlyField(source='project.name')
+    
+    class Meta:
+        model = ECN
+        fields = [
+            'id', 'ecn_number', 'project', 'project_pid', 'project_name',
+            'customer_name', 'product_name', 'customer_part_no', 'pcepl_part_no',
+            'applicable_standard', 'inspection_authority', 'raised_department',
+            'change_initiated_by', 'ecn_date', 'old_revision_no', 'old_revision_date',
+            'new_revision', 'details_of_change', 'impact_analysis', 'action_plan',
+            'initiator', 'initiator_name', 'reviewed_by', 'reviewed_by_name',
+            'approved_by', 'approved_by_name', 'status', 'created_at', 'updated_at'
+        ]
+        
+    def get_customer_name(self, obj):
+        if obj.project:
+            if obj.project.customer:
+                return obj.project.customer.name
+            return obj.project.customer_name or ''
+        return ''
