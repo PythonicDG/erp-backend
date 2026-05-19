@@ -269,6 +269,8 @@ class ECN(models.Model):
         return f"{self.ecn_number or 'Draft ECN'} - {self.project.name}"
 
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        
         if not self.ecn_number:
             from django.utils import timezone
             date_val = self.ecn_date or timezone.now().date()
@@ -291,4 +293,16 @@ class ECN(models.Model):
             self.ecn_number = f"{prefix}{new_serial:03d}"
             
         super().save(*args, **kwargs)
+
+        # 1. Automatically change project status from 'Closed' to 'Open' on new ECN creation
+        project = self.project
+        if is_new and project.status == 'Closed':
+            project.status = 'Open'
+            project.save(update_fields=['status'])
+
+        # 2. Automatically change project status back to 'Closed' once ECN is approved
+        if self.status == ECNStatus.APPROVED or self.status == 'Approved':
+            if project.status != 'Closed':
+                project.status = 'Closed'
+                project.save(update_fields=['status'])
 
