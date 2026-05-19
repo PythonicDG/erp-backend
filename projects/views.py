@@ -482,6 +482,42 @@ class ProjectViewSet(AuditLogMixin, viewsets.ModelViewSet):
         except Exception as e:
             return Response({"error": f"Failed to parse Excel file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['post'])
+    def sync_all_statuses(self, request):
+        from workflow.models import StageInstance
+        projects = Project.objects.exclude(status='Closed')
+        updated_count = 0
+        for project in projects:
+            instances = StageInstance.objects.filter(project=project)
+            if instances.exists() and all(inst.status == 'Approved' for inst in instances):
+                project.status = 'Closed'
+                project.save()
+                updated_count += 1
+        return Response({"message": f"Updated {updated_count} projects"})
+
+    @action(detail=True, methods=['get'])
+    def full_report(self, request, pk=None):
+        from workflow.models import StageInstance
+        from workflow.serializers import StageInstanceSerializer
+        from authentication.system_models import CompanyProfile
+        from authentication.serializers import CompanyProfileSerializer
+        
+        project = self.get_object()
+        stages = StageInstance.objects.filter(project=project).order_by('order')
+        company = CompanyProfile.objects.first()
+        
+        return Response({
+            "project": ProjectSerializer(project).data,
+            "stages": StageInstanceSerializer(stages, many=True).data,
+            "company": CompanyProfileSerializer(company).data if company else None
+        })
+
+    @action(detail=False, methods=['get'])
+    def statistics(self, request):
+        from django.db.models import Count
+        stats = Project.objects.values('status').annotate(count=Count('id'))
+        return Response(stats)
+
 class CustomerMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = CustomerMaster.objects.all()
     serializer_class = CustomerMasterSerializer
@@ -804,42 +840,6 @@ class CustomerMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
             
         except Exception as e:
             return Response({"error": f"Failed to parse Excel file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=False, methods=['post'])
-    def sync_all_statuses(self, request):
-        from workflow.models import StageInstance
-        projects = Project.objects.exclude(status='Closed')
-        updated_count = 0
-        for project in projects:
-            instances = StageInstance.objects.filter(project=project)
-            if instances.exists() and all(inst.status == 'Approved' for inst in instances):
-                project.status = 'Closed'
-                project.save()
-                updated_count += 1
-        return Response({"message": f"Updated {updated_count} projects"})
-
-    @action(detail=True, methods=['get'])
-    def full_report(self, request, pk=None):
-        from workflow.models import StageInstance
-        from workflow.serializers import StageInstanceSerializer
-        from authentication.system_models import CompanyProfile
-        from authentication.serializers import CompanyProfileSerializer
-        
-        project = self.get_object()
-        stages = StageInstance.objects.filter(project=project).order_by('order')
-        company = CompanyProfile.objects.first()
-        
-        return Response({
-            "project": ProjectSerializer(project).data,
-            "stages": StageInstanceSerializer(stages, many=True).data,
-            "company": CompanyProfileSerializer(company).data if company else None
-        })
-
-    @action(detail=False, methods=['get'])
-    def statistics(self, request):
-        from django.db.models import Count
-        stats = Project.objects.values('status').annotate(count=Count('id'))
-        return Response(stats)
 
 
 class StandardMasterViewSet(AuditLogMixin, viewsets.ModelViewSet):
