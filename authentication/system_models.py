@@ -34,6 +34,8 @@ class CompanyProfile(models.Model):
     country = models.CharField(max_length=100, default="India")
     logo = models.ImageField(upload_to='', null=True, blank=True)
     audit_logs_enabled = models.BooleanField(default=True)
+    watermark_under_approval = models.CharField(max_length=255, default="UNDER APPROVAL")
+    watermark_released = models.CharField(max_length=255, default="RELEASED")
     
     class Meta:
         verbose_name = _("Company Profile")
