@@ -90,7 +90,7 @@ class ProjectAdmin(admin.ModelAdmin):
 class ECNAdmin(admin.ModelAdmin):
     list_display = (
         'ecn_number', 'project', 'raised_department', 
-        'change_initiated_by', 'ecn_date', 'status', 'created_at'
+        'change_initiated_by', 'ecn_date', 'status_badge', 'created_at'
     )
     list_filter = ('status', 'raised_department', 'ecn_date', 'created_at')
     search_fields = (
@@ -104,6 +104,45 @@ class ECNAdmin(admin.ModelAdmin):
     )
     autocomplete_fields = ('project', 'initiator', 'reviewed_by', 'approved_by')
     
+    actions = ['make_submitted', 'make_reviewed', 'make_approved', 'make_rejected']
+
+    @admin.action(description="Mark selected ECNs as Submitted")
+    def make_submitted(self, request, queryset):
+        updated = queryset.update(status='Submitted')
+        self.message_user(request, f"{updated} ECNs successfully marked as Submitted.")
+
+    @admin.action(description="Mark selected ECNs as Reviewed")
+    def make_reviewed(self, request, queryset):
+        updated = queryset.update(status='Reviewed', reviewed_by=request.user)
+        self.message_user(request, f"{updated} ECNs successfully marked as Reviewed.")
+
+    @admin.action(description="Mark selected ECNs as Approved")
+    def make_approved(self, request, queryset):
+        updated = queryset.update(status='Approved', approved_by=request.user)
+        self.message_user(request, f"{updated} ECNs successfully marked as Approved.")
+
+    @admin.action(description="Mark selected ECNs as Rejected")
+    def make_rejected(self, request, queryset):
+        updated = queryset.update(status='Rejected')
+        self.message_user(request, f"{updated} ECNs successfully marked as Rejected.")
+
+    def status_badge(self, obj):
+        colors = {
+            'Draft': '#6b7280',      # gray
+            'Submitted': '#f59e0b',  # amber/yellow
+            'Reviewed': '#3b82f6',   # blue
+            'Approved': '#10b981',   # emerald/green
+            'Rejected': '#ef4444',   # red
+        }
+        color = colors.get(obj.status, '#000')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px; display: inline-block; text-align: center; min-width: 80px;">{}</span>',
+            color,
+            obj.status
+        )
+    status_badge.short_description = "Status"
+    status_badge.admin_order_field = "status"
+
     fieldsets = (
         ('ECN Info & Project Link', {
             'fields': ('ecn_number', 'status', 'project')

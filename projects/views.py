@@ -1,6 +1,7 @@
 from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN
 from .serializers import ProjectSerializer, CustomerMasterSerializer, StandardMasterSerializer, InspectionAuthorityMasterSerializer, ECNSerializer
@@ -9,12 +10,18 @@ from authentication.mixins import AuditLogMixin
 from authentication.permissions import IsAdmin
 from django.db.models import Q
 
+class ProjectPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 10000
+
 class ProjectViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = Project.objects.all().select_related('customer').prefetch_related(
         'workflow_stages', 
         'workflow_stages__template'
     )
     serializer_class = ProjectSerializer
+    pagination_class = ProjectPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     
     filterset_fields = ['status', 'project_type', 'customer_name']

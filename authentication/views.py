@@ -24,10 +24,14 @@ class TeamViewSet(AuditLogMixin, viewsets.ModelViewSet):
     """
     queryset = User.objects.all().order_by('-created_at')
     serializer_class = TeamMemberSerializer
-    permission_classes = [IsAdminOrSupervisor]
     filterset_fields = ['role', 'is_active', 'department']
     search_fields = ['first_name', 'last_name', 'email', 'employee_id']
     audit_module = "Team"
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        return [IsAdminOrSupervisor()]
 
     def get_audit_target(self, instance):
         return f"{instance.full_name} ({instance.employee_id})"
