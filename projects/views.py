@@ -1569,6 +1569,7 @@ class DashboardViewSet(viewsets.ViewSet):
         open_projects = projects_qs.filter(status__in=['Open', 'In Progress']).count()
         pending_approval = projects_qs.filter(status='Pending Approval').count()
         customers_count = CustomerMaster.objects.count()
+        ecns_count = ECN.objects.count()
         
         completion_rate = (closed_projects / total_projects * 100) if total_projects > 0 else 0
         
@@ -1624,6 +1625,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 'open': open_projects,
                 'pending': pending_approval,
                 'customers': customers_count,
+                'ecns': ecns_count,
                 'completion_rate': round(completion_rate, 2)
             },
             'charts': {
