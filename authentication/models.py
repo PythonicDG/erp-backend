@@ -73,8 +73,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         if not self.employee_id:
             # Generate auto employee ID: EMP-0001
             last_user = User.objects.order_by('-id').first()
-            new_id = (last_user.id + 1) if last_user else 1
-            self.employee_id = f"EMP-{new_id:04d}"
+            base_id = (last_user.id + 1) if last_user else 1
+            while True:
+                candidate_id = f"EMP-{base_id:04d}"
+                if not User.objects.filter(employee_id=candidate_id).exists():
+                    self.employee_id = candidate_id
+                    break
+                base_id += 1
         super().save(*args, **kwargs)
 
     def __str__(self):
