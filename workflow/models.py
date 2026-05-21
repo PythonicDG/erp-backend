@@ -18,6 +18,11 @@ class StageTemplate(models.Model):
     approval_required = models.BooleanField(default=True)
     allow_attachments = models.BooleanField(default=True)
     
+    # Complexity-based Durations in days
+    duration_high = models.PositiveIntegerField(default=5, verbose_name=_("Duration (High Complexity) in Days"))
+    duration_medium = models.PositiveIntegerField(default=3, verbose_name=_("Duration (Medium Complexity) in Days"))
+    duration_low = models.PositiveIntegerField(default=1, verbose_name=_("Duration (Low Complexity) in Days"))
+    
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_stage_templates')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -87,6 +92,14 @@ class StageInstance(models.Model):
     
     unlocked_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    
+    # Timeline & D&D Plan fields
+    planned_start_date = models.DateField(null=True, blank=True, verbose_name=_("Planned Start Date"))
+    planned_end_date = models.DateField(null=True, blank=True, verbose_name=_("Planned End Date"))
+    duration = models.PositiveIntegerField(null=True, blank=True, verbose_name=_("Duration (Days)"))
+    actual_completion_date = models.DateField(null=True, blank=True, verbose_name=_("Actual Completion Date"))
+    delay_days = models.IntegerField(null=True, blank=True, verbose_name=_("Delay (Days)"))
+    remarks = models.TextField(blank=True, null=True, verbose_name=_("Remarks"))
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
