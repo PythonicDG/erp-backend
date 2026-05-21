@@ -52,6 +52,37 @@ class StageTemplateViewSet(AuditLogMixin, viewsets.ModelViewSet):
             
         return Response(FormFieldSerializer(created_fields, many=True).data)
 
+    @decorators.action(detail=False, methods=['post'])
+    def reorder(self, request):
+        orders = request.data.get('orders', [])
+        if not orders:
+            return Response({"error": "Orders are required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        from django.db import transaction
+        with transaction.atomic():
+            # Update all StageTemplates order
+            for item in orders:
+                StageTemplate.objects.filter(id=item['id']).update(order=item['order'])
+                # Propagate order changes to all existing projects' StageInstances
+                StageInstance.objects.filter(template_id=item['id']).update(order=item['order'])
+            
+            # Recalculate timeline dates for all projects that are not Closed
+            active_projects = Project.objects.exclude(status='Closed')
+            for proj in active_projects:
+                WorkflowService.recalculate_project_timeline(proj)
+                
+        # Audit Log
+        from authentication.utils import log_action
+        log_action(
+            user=request.user,
+            action="REORDER_STAGES",
+            target="Workflow Stages Sequence",
+            module="Workflow"
+        )
+        
+        return Response({"status": "reordered"})
+
+
 class StageInstanceViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = StageInstanceSerializer
     permission_classes = [permissions.IsAuthenticated]
