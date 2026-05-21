@@ -36,6 +36,57 @@ class WorkflowService:
                     status=status,
                     unlocked_at=unlocked_at
                 )
+                
+        # Recalculate project timeline automatically upon initialization
+        WorkflowService.recalculate_project_timeline(project)
+
+    @staticmethod
+    def recalculate_project_timeline(project):
+        """
+        Recalculates the planned start and end dates for all StageInstances
+        sequentially based on the project complexity and start date.
+        """
+        if not project.planned_start_date:
+            # If no start date, we reset or clear planned dates
+            StageInstance.objects.filter(project=project).update(
+                planned_start_date=None,
+                planned_end_date=None,
+                duration=None
+            )
+            return
+
+        from datetime import timedelta
+        instances = StageInstance.objects.filter(project=project).order_by('order')
+        
+        current_start_date = project.planned_start_date
+        complexity = project.project_complexity or 'Medium'
+
+        for instance in instances:
+            template = instance.template
+            if complexity == 'High':
+                duration = template.duration_high
+            elif complexity == 'Low':
+                duration = template.duration_low
+            else:
+                duration = template.duration_medium
+
+            # Calculate planned end date
+            if duration and duration > 0:
+                planned_end_date = current_start_date + timedelta(days=duration)
+            else:
+                planned_end_date = current_start_date
+                duration = 0
+
+            instance.planned_start_date = current_start_date
+            instance.planned_end_date = planned_end_date
+            instance.duration = duration
+            instance.save()
+
+            # The next stage starts on the calendar day after current_end_date, skipping Sunday
+            next_start = planned_end_date + timedelta(days=1)
+            if next_start.weekday() == 6:  # 6 is Sunday in Python
+                next_start += timedelta(days=1)  # Skip Sunday and set to Monday
+            current_start_date = next_start
 
     @staticmethod
     @transaction.atomic
@@ -104,6 +155,18 @@ class WorkflowService:
         """
         stage_instance.status = StageInstance.Status.APPROVED
         stage_instance.completed_at = timezone.now()
+        
+        # Populate live tracking fields for the D&D Plan
+        stage_instance.actual_completion_date = timezone.now().date()
+        if stage_instance.planned_end_date:
+            delay = (stage_instance.actual_completion_date - stage_instance.planned_end_date).days
+            stage_instance.delay_days = max(0, delay)
+        else:
+            stage_instance.delay_days = 0
+            
+        if remarks:
+            stage_instance.remarks = remarks
+            
         stage_instance.save()
         
         # Update submission status

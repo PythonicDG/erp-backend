@@ -18,7 +18,8 @@ class StageTemplateSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'code', 'description', 'order', 
             'is_mandatory', 'is_active', 'assigned_role', 
-            'approval_required', 'allow_attachments', 'fields'
+            'approval_required', 'allow_attachments', 'fields',
+            'duration_high', 'duration_medium', 'duration_low'
         ]
 
 class StageSubmissionSerializer(serializers.ModelSerializer):
@@ -44,7 +45,9 @@ class StageInstanceSerializer(serializers.ModelSerializer):
         model = StageInstance
         fields = [
             'id', 'template', 'template_details', 'status', 'order', 
-            'unlocked_at', 'completed_at', 'current_submission', 'activities'
+            'unlocked_at', 'completed_at', 'current_submission', 'activities',
+            'planned_start_date', 'planned_end_date', 'duration', 
+            'actual_completion_date', 'delay_days', 'remarks'
         ]
 
     def get_current_submission(self, obj):
