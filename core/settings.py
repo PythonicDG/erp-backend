@@ -164,6 +164,10 @@ SPECTACULAR_SETTINGS = {
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
 CORS_ALLOW_CREDENTIALS = True
 
+# Increase maximum upload data size (e.g. for base64 file uploads in JSON body)
+# Default is 2621440 (2.5MB). We increase it to 20971520 (20MB) to support up to 10MB-15MB files.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 20971520
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
