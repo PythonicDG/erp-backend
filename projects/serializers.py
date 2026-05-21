@@ -36,7 +36,8 @@ class ProjectSerializer(serializers.ModelSerializer):
             'pcepl_part_no', 'project_type', 'inspection_authority', 'inspection_authority_fk', 'inspection_authority_details',
             'applicable_standard', 'standard', 'standard_details', 'date_received', 'month_received', 
             'target_completion_date', 'status', 'priority', 'description', 'created_at', 'updated_at',
-            'created_by', 'created_by_name', 'current_stage', 'assigned_employee'
+            'created_by', 'created_by_name', 'current_stage', 'assigned_employee',
+            'project_complexity', 'planned_start_date'
         ]
         read_only_fields = ['created_by']
  

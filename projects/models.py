@@ -45,6 +45,13 @@ class Project(models.Model):
     customer_part_no = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("Customer Part No"))
     pcepl_part_no = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("PCEPL Part No"))
     project_type = models.CharField(max_length=100, verbose_name=_("Project Type"))
+    project_complexity = models.CharField(
+        max_length=10, 
+        choices=[('High', 'High'), ('Medium', 'Medium'), ('Low', 'Low')], 
+        default='Medium', 
+        verbose_name=_("Project Complexity")
+    )
+    planned_start_date = models.DateField(blank=True, null=True, verbose_name=_("Planned Start Date"))
     inspection_authority = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Inspection Authority"))
     inspection_authority_fk = models.ForeignKey(
         'InspectionAuthorityMaster',
@@ -117,6 +124,11 @@ class Project(models.Model):
         if self.inspection_authority_fk:
             self.inspection_authority = self.inspection_authority_fk.name
         super().save(*args, **kwargs)
+        try:
+            from workflow.services import WorkflowService
+            WorkflowService.recalculate_project_timeline(self)
+        except Exception:
+            pass
 
 
 class StandardMaster(models.Model):
