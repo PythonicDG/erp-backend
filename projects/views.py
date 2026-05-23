@@ -35,7 +35,7 @@ class ProjectViewSet(AuditLogMixin, viewsets.ModelViewSet):
         in_processing = self.request.query_params.get('in_processing')
         if in_processing == 'true':
             queryset = queryset.filter(
-                workflow_stages__submissions__status__in=['Submitted', 'Under Review', 'Approved', 'Rejected']
+                workflow_stages__submissions__isnull=False
             ).distinct()
         return queryset
 
