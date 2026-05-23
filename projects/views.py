@@ -30,6 +30,15 @@ class ProjectViewSet(AuditLogMixin, viewsets.ModelViewSet):
     ordering = ['-created_at']
     audit_module = "Projects"
 
+    def get_queryset(self):
+        queryset = self.queryset
+        in_processing = self.request.query_params.get('in_processing')
+        if in_processing == 'true':
+            queryset = queryset.filter(
+                workflow_stages__submissions__status__in=['Submitted', 'Under Review', 'Approved', 'Rejected']
+            ).distinct()
+        return queryset
+
     def get_audit_target(self, instance):
         return f"Project: {instance.pid} ({instance.name})"
 
