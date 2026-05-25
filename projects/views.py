@@ -68,13 +68,13 @@ class ProjectViewSet(AuditLogMixin, viewsets.ModelViewSet):
         sample_rows = [
             [
                 "Junction Box CSL-WATERJET", "Larsen & Toubro", "PAAG464305", 
-                "30071850", "Internal QA", "IEC 61439", "2026-05-17", 
+                "30071850", "Internal QA, LRS", "IEC 61439", "2026-05-17", 
                 "2026-06-30", "Open", "High", "employee@example.com", 
                 "Standard Junction Box assembly and wiring."
             ],
             [
                 "CSL Panel Maintenance", "Cochin Shipyard", "CSL-9988", 
-                "", "LRS", "IEC 60947", "2026-05-20", 
+                "", "LRS, IRS", "IEC 60947", "2026-05-20", 
                 "", "Draft", "Medium", "", "Annual maintenance and QA inspection."
             ]
         ]
