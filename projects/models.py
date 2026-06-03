@@ -124,6 +124,42 @@ class Project(models.Model):
         if self.inspection_authority_fk:
             self.inspection_authority = self.inspection_authority_fk.name
         super().save(*args, **kwargs)
+        
+        if self.status == 'Closed':
+            try:
+                from django.utils import timezone
+                from datetime import timedelta
+                from projects.models import CustomerFeedback
+                
+                scheduled_date = timezone.now().date() + timedelta(days=365)
+                default_performance = [
+                    {"sr_no": 1, "parameter": "Panel Performance", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                    {"sr_no": 2, "parameter": "PLC / Control Logic Functionality", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                    {"sr_no": 3, "parameter": "Electrical Safety", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                    {"sr_no": 4, "parameter": "Build Quality", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                    {"sr_no": 5, "parameter": "Ease of Maintenance", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                    {"sr_no": 6, "parameter": "Technical Support Responsiveness", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                    {"sr_no": 7, "parameter": "Overall Satisfaction (Based on Usage)", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                    {"sr_no": 9, "parameter": "Documentation", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                ]
+                
+                CustomerFeedback.objects.get_or_create(
+                    project=self,
+                    defaults={
+                        "customer_name": self.customer.name if self.customer else self.customer_name or "",
+                        "product_name": self.name,
+                        "customer_drawing_no": self.customer_part_no or "",
+                        "pcepl_part_no": self.pcepl_part_no or "",
+                        "panel_dispatch_date": timezone.now().date(),
+                        "feedback_collection_date": scheduled_date,
+                        "scheduled_date": scheduled_date,
+                        "performance_feedback": default_performance,
+                        "status": "Scheduled"
+                    }
+                )
+            except Exception:
+                pass
+                
         try:
             from workflow.services import WorkflowService
             WorkflowService.recalculate_project_timeline(self)
@@ -317,4 +353,63 @@ class ECN(models.Model):
             if project.status != 'Closed':
                 project.status = 'Closed'
                 project.save(update_fields=['status'])
+
+
+class CustomerFeedback(models.Model):
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='feedbacks',
+        verbose_name=_("Project")
+    )
+    form_no = models.CharField(max_length=50, default='DD-F-11', verbose_name=_("Form No."))
+    form_revision_no = models.CharField(max_length=50, default='Rev-00', verbose_name=_("Form Revision No."))
+    form_issue_date = models.DateField(default='2025-07-01', verbose_name=_("Form Issue Date"))
+    
+    # Section 1: Project & Customer Details
+    customer_name = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Customer Name"))
+    product_name = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Product / Project Name"))
+    customer_drawing_no = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Customer Part / Drawing Number"))
+    pcepl_part_no = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("PCEPL Part Number"))
+    panel_dispatch_date = models.DateField(blank=True, null=True, verbose_name=_("Panel / Product Dispatch Date"))
+    feedback_collection_date = models.DateField(blank=True, null=True, verbose_name=_("Feedback Collection Date"))
+    usage_duration_months = models.PositiveIntegerField(default=12, blank=True, null=True, verbose_name=_("Usage Duration (Months)"))
+    
+    # Section 2: Performance Feedback (Based on Usage)
+    performance_feedback = models.JSONField(default=list, blank=True, verbose_name=_("Performance Feedback"))
+    
+    # Section 3: Feedback Provided By (Customer Rep.)
+    customer_rep_name = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("Customer Rep Name"))
+    customer_rep_signature = models.TextField(blank=True, null=True, verbose_name=_("Customer Rep Signature"))
+    customer_rep_date = models.DateField(blank=True, null=True, verbose_name=_("Customer Rep Sign Date"))
+    
+    # Section 4: Reviewed By (PCEPL Rep.)
+    pcepl_rep_name = models.CharField(max_length=255, blank=True, null=True, verbose_name=_("PCEPL Rep Name"))
+    pcepl_rep_signature = models.TextField(blank=True, null=True, verbose_name=_("PCEPL Rep Signature"))
+    pcepl_rep_date = models.DateField(blank=True, null=True, verbose_name=_("PCEPL Rep Sign Date"))
+    
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('Scheduled', _('Scheduled')),
+            ('Pending', _('Pending')),
+            ('Submitted', _('Submitted')),
+        ],
+        default='Scheduled',
+        verbose_name=_("Status")
+    )
+    scheduled_date = models.DateField(verbose_name=_("Scheduled Date"))
+    notified = models.BooleanField(default=False, verbose_name=_("Notified"))
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-scheduled_date']
+        verbose_name = _("Customer Feedback")
+        verbose_name_plural = _("Customer Feedbacks")
+
+    def __str__(self):
+        return f"Feedback for {self.project.pid} - Scheduled: {self.scheduled_date}"
+
 
