@@ -3,8 +3,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN
-from .serializers import ProjectSerializer, CustomerMasterSerializer, StandardMasterSerializer, InspectionAuthorityMasterSerializer, ECNSerializer
+from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN, CustomerFeedback
+from .serializers import ProjectSerializer, CustomerMasterSerializer, StandardMasterSerializer, InspectionAuthorityMasterSerializer, ECNSerializer, CustomerFeedbackSerializer
 from .permissions import CanCreateProject
 from authentication.mixins import AuditLogMixin
 from authentication.permissions import IsAdmin
@@ -45,6 +45,18 @@ class ProjectViewSet(AuditLogMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
         super().perform_create(serializer)
+
+    @action(detail=False, methods=['get'], url_path='minimal')
+    def minimal_list(self, request):
+        # Return only basic fields of projects to avoid serialization timeouts
+        queryset = Project.objects.all().select_related('customer').only('id', 'pid', 'name', 'customer_name', 'customer')
+        data = [{
+            'id': p.id,
+            'pid': p.pid,
+            'name': p.name,
+            'customer_name': p.customer.name if p.customer else p.customer_name or ''
+        } for p in queryset]
+        return Response(data)
 
     @action(detail=False, methods=['get'], url_path='download-template')
     def download_template(self, request):
@@ -1713,3 +1725,109 @@ class ECNViewSet(AuditLogMixin, viewsets.ModelViewSet):
             queryset = queryset.filter(ecn_date=date_val)
             
         return queryset
+
+
+class CustomerFeedbackViewSet(AuditLogMixin, viewsets.ModelViewSet):
+    queryset = CustomerFeedback.objects.all().select_related('project')
+    serializer_class = CustomerFeedbackSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+    audit_module = "Customer Feedback"
+
+    def get_audit_target(self, instance):
+        return f"Customer Feedback: {instance.project.pid}"
+
+    def get_queryset(self):
+        # Automatically check and trigger scheduled feedbacks that are due
+        from django.utils import timezone
+        from authentication.models import User
+        from authentication.utils import notify_user
+        
+        today = timezone.now().date()
+        due_feedbacks = CustomerFeedback.objects.filter(status='Scheduled', scheduled_date__lte=today)
+        if due_feedbacks.exists():
+            for feedback in due_feedbacks:
+                feedback.status = 'Pending'
+                feedback.save(update_fields=['status'])
+                
+                # Notify supervisors/admins
+                recipients = list(User.objects.filter(role__in=['ADMIN', 'SUPERVISOR']))
+                if feedback.project.supervisor and feedback.project.supervisor not in recipients:
+                    recipients.append(feedback.project.supervisor)
+                for recipient in recipients:
+                    notify_user(
+                        recipient=recipient,
+                        sender=None,
+                        title="Customer Feedback Due",
+                        message=f"Customer Feedback Form is now due for Project {feedback.project.pid} ({feedback.project.name})",
+                        notification_type='warning',
+                        link=f"/feedback"
+                    )
+                    
+        return CustomerFeedback.objects.all().select_related('project', 'project__customer').order_by('-created_at')
+
+    @action(detail=False, methods=['post'], url_path='generate-now')
+    def generate_now(self, request):
+        project_id = request.data.get('project_id')
+        if not project_id:
+            return Response({"error": "Project ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return Response({"error": "Project not found"}, status=status.HTTP_404_NOT_FOUND)
+            
+        from django.utils import timezone
+        today = timezone.now().date()
+        
+        default_performance = [
+            {"sr_no": 1, "parameter": "Panel Performance", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+            {"sr_no": 2, "parameter": "PLC / Control Logic Functionality", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+            {"sr_no": 3, "parameter": "Electrical Safety", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+            {"sr_no": 4, "parameter": "Build Quality", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+            {"sr_no": 5, "parameter": "Ease of Maintenance", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+            {"sr_no": 6, "parameter": "Technical Support Responsiveness", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+            {"sr_no": 7, "parameter": "Overall Satisfaction (Based on Usage)", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+            {"sr_no": 9, "parameter": "Documentation", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+        ]
+        
+        feedback, created = CustomerFeedback.objects.get_or_create(
+            project=project,
+            defaults={
+                "customer_name": project.customer.name if project.customer else project.customer_name or "",
+                "product_name": project.name,
+                "customer_drawing_no": project.customer_part_no or "",
+                "pcepl_part_no": project.pcepl_part_no or "",
+                "panel_dispatch_date": today,
+                "feedback_collection_date": today,
+                "scheduled_date": today,
+                "performance_feedback": default_performance,
+                "status": "Pending"
+            }
+        )
+        
+        if not created:
+            # If it already existed but was Scheduled, force it to Pending
+            if feedback.status == 'Scheduled':
+                feedback.status = 'Pending'
+                feedback.scheduled_date = today
+                feedback.save()
+        
+        # Notify immediately
+        from authentication.models import User
+        from authentication.utils import notify_user
+        recipients = list(User.objects.filter(role__in=['ADMIN', 'SUPERVISOR']))
+        if project.supervisor and project.supervisor not in recipients:
+            recipients.append(project.supervisor)
+        for recipient in recipients:
+            notify_user(
+                recipient=recipient,
+                sender=request.user,
+                title="Customer Feedback Generated",
+                message=f"Customer Feedback Form has been manually generated for Project {project.pid} ({project.name})",
+                notification_type='info',
+                link=f"/feedback"
+            )
+            
+        return Response(CustomerFeedbackSerializer(feedback).data, status=status.HTTP_201_CREATED)
+

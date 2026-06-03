@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN
+from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN, CustomerFeedback
 from .services import ProjectService
 
 class CustomerMasterSerializer(serializers.ModelSerializer):
@@ -130,3 +130,13 @@ class ECNSerializer(serializers.ModelSerializer):
                 return obj.project.customer.name
             return obj.project.customer_name or ''
         return ''
+
+
+class CustomerFeedbackSerializer(serializers.ModelSerializer):
+    project_pid = serializers.ReadOnlyField(source='project.pid')
+    project_name = serializers.ReadOnlyField(source='project.name')
+
+    class Meta:
+        model = CustomerFeedback
+        fields = '__all__'
+

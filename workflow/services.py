@@ -225,6 +225,38 @@ class WorkflowService:
             project.status = 'Closed'
             project.save()
 
+            # Automatically schedule Customer Feedback Form after 1 year (365 days)
+            from projects.models import CustomerFeedback
+            from datetime import timedelta
+            scheduled_date = timezone.now().date() + timedelta(days=365)
+            
+            # Default performance parameters from the Excel sheet
+            default_performance = [
+                {"sr_no": 1, "parameter": "Panel Performance", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                {"sr_no": 2, "parameter": "PLC / Control Logic Functionality", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                {"sr_no": 3, "parameter": "Electrical Safety", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                {"sr_no": 4, "parameter": "Build Quality", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                {"sr_no": 5, "parameter": "Ease of Maintenance", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                {"sr_no": 6, "parameter": "Technical Support Responsiveness", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                {"sr_no": 7, "parameter": "Overall Satisfaction (Based on Usage)", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+                {"sr_no": 9, "parameter": "Documentation", "excellent": False, "good": False, "average": False, "poor": False, "remarks": ""},
+            ]
+            
+            CustomerFeedback.objects.get_or_create(
+                project=project,
+                defaults={
+                    "customer_name": project.customer.name if project.customer else project.customer_name or "",
+                    "product_name": project.name,
+                    "customer_drawing_no": project.customer_part_no or "",
+                    "pcepl_part_no": project.pcepl_part_no or "",
+                    "panel_dispatch_date": timezone.now().date(),
+                    "feedback_collection_date": scheduled_date,
+                    "scheduled_date": scheduled_date,
+                    "performance_feedback": default_performance,
+                    "status": "Scheduled"
+                }
+            )
+
     @staticmethod
     @transaction.atomic
     def reject_stage(stage_instance, supervisor, remarks):
