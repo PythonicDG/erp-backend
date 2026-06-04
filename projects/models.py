@@ -259,7 +259,7 @@ class ECN(models.Model):
     raised_department = models.CharField(max_length=255, verbose_name=_("ECN Raised Department"))
     change_initiated_by = models.CharField(max_length=255, verbose_name=_("Change Initiated By"))
     ecn_date = models.DateField(verbose_name=_("ECN Date"))
-    old_revision_no = models.CharField(max_length=50, verbose_name=_("Old Revision No."))
+    old_revision_no = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("Old Revision No."))
     old_revision_date = models.DateField(blank=True, null=True, verbose_name=_("Old Revision Date"))
     new_revision = models.CharField(max_length=50, verbose_name=_("New Revision"))
     
