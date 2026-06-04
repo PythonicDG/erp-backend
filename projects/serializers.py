@@ -121,7 +121,7 @@ class ECNSerializer(serializers.ModelSerializer):
             'change_initiated_by', 'ecn_date', 'old_revision_no', 'old_revision_date',
             'new_revision', 'details_of_change', 'impact_analysis', 'action_plan',
             'initiator', 'initiator_name', 'reviewed_by', 'reviewed_by_name',
-            'approved_by', 'approved_by_name', 'status', 'created_at', 'updated_at'
+            'approved_by', 'approved_by_name', 'status', 'attachments', 'created_at', 'updated_at'
         ]
         
     def get_customer_name(self, obj):

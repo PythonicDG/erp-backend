@@ -271,6 +271,7 @@ class ECN(models.Model):
     
     # Section 4: Action Plan (List of dicts: [{'action': '...', 'responsible': '...', 'target_date': 'YYYY-MM-DD', 'remark': '...'}])
     action_plan = models.JSONField(default=list, blank=True, verbose_name=_("Action Plan"))
+    attachments = models.JSONField(default=list, blank=True, verbose_name=_("Attachments"))
     
     # Section 5: Approvals
     initiator = models.ForeignKey(
