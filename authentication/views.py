@@ -16,7 +16,7 @@ from .serializers import (
 )
 
 from .mixins import AuditLogMixin
-from .permissions import IsAdmin, IsAdminOrSupervisor
+from .permissions import IsAdmin, IsAdminOrSupervisor, IsSuperAdmin
 
 class TeamViewSet(AuditLogMixin, viewsets.ModelViewSet):
     """
@@ -278,5 +278,112 @@ class NotificationViewSet(viewsets.ModelViewSet):
     def unread_count(self, request):
         count = Notification.objects.filter(recipient=request.user, is_read=False).count()
         return Response({'count': count})
+
+
+import io
+import tempfile
+from django.db import transaction
+from django.core.management import call_command
+from django.http import HttpResponse
+
+class DatabaseBackupView(GenericAPIView):
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        buffer = io.StringIO()
+        call_command(
+            'dumpdata', 
+            exclude=['contenttypes', 'auth.Permission', 'sessions', 'admin.logentry'], 
+            stdout=buffer
+        )
+        backup_data = buffer.getvalue()
+        
+        response = HttpResponse(backup_data, content_type='application/json')
+        response['Content-Disposition'] = 'attachment; filename="erp_backup.json"'
+        
+        from .utils import log_action
+        log_action(
+            user=request.user,
+            action="BACKUP",
+            target="Database",
+            module="Settings"
+        )
+        return response
+
+
+class DatabaseRestoreView(GenericAPIView):
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request):
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not file_obj.name.endswith('.json'):
+            return Response({"error": "Only JSON backup files are supported"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as temp_file:
+                for chunk in file_obj.chunks():
+                    temp_file.write(chunk)
+                temp_file_path = temp_file.name
+
+            with transaction.atomic():
+                call_command('loaddata', temp_file_path)
+
+            from .utils import log_action
+            log_action(
+                user=request.user,
+                action="RESTORE",
+                target="Database",
+                module="Settings"
+            )
+            return Response({"success": True, "message": "Database restored successfully"})
+        except Exception as e:
+            return Response({"error": f"Failed to restore database: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DatabaseResetView(GenericAPIView):
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request):
+        try:
+            with transaction.atomic():
+                from projects.models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster
+                from .models import User, Notification
+                from .system_models import AuditLog
+                
+                # Delete all projects (cascades to ECNs, ASCNs, Feedbacks, StageInstances, submissions, etc.)
+                Project.objects.all().delete()
+                
+                # Delete all customers
+                CustomerMaster.objects.all().delete()
+                
+                # Delete all standards
+                StandardMaster.objects.all().delete()
+                
+                # Delete all inspection authorities
+                InspectionAuthorityMaster.objects.all().delete()
+                
+                # Delete all users except SuperAdmins
+                User.objects.exclude(role='SUPERADMIN').delete()
+                
+                # Delete all audit logs
+                AuditLog.objects.all().delete()
+                
+                # Delete all notifications
+                Notification.objects.all().delete()
+                
+                from .utils import log_action
+                log_action(
+                    user=request.user,
+                    action="RESET",
+                    target="Database",
+                    module="Settings"
+                )
+            
+            return Response({"success": True, "message": "All operational data, users (excluding SuperAdmins), standards, and inspection authorities have been reset successfully."})
+        except Exception as e:
+            return Response({"error": f"Reset failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

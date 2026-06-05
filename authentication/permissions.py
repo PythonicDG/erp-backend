@@ -12,6 +12,16 @@ class IsAdmin(BasePermission):
         )
 
 
+class IsSuperAdmin(BasePermission):
+    """Allows access only to SuperAdmin users."""
+    def has_permission(self, request, view):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and request.user.role == UserRole.SUPERADMIN
+        )
+
+
 class IsSupervisor(BasePermission):
     """Allows access only to supervisor users."""
     def has_permission(self, request, view):

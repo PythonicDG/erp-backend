@@ -2,7 +2,8 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     LoginView, CustomTokenRefreshView, LogoutView, MeView, TeamViewSet,
-    CompanyProfileView, AuditLogViewSet, NotificationViewSet
+    CompanyProfileView, AuditLogViewSet, NotificationViewSet,
+    DatabaseBackupView, DatabaseRestoreView, DatabaseResetView
 )
 
 app_name = 'authentication'
@@ -18,5 +19,8 @@ urlpatterns = [
     path('logout/', LogoutView.as_view(), name='logout'),
     path('me/', MeView.as_view(), name='me'),
     path('company-profile/', CompanyProfileView.as_view(), name='company-profile'),
+    path('database/backup/', DatabaseBackupView.as_view(), name='database-backup'),
+    path('database/restore/', DatabaseRestoreView.as_view(), name='database-restore'),
+    path('database/reset/', DatabaseResetView.as_view(), name='database-reset'),
     path('', include(router.urls)),
 ]
