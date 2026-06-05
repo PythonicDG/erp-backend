@@ -370,7 +370,7 @@ class ECN(models.Model):
                     title="ECN Approval Request",
                     message=f"ECN {self.ecn_number} has been submitted and is pending your approval.",
                     notification_type='approval_request',
-                    link=f"/admin/ecn/{self.id}"
+                    link=f"/ecn/{self.id}"
                 )
             except Exception as e:
                 print(f"Failed to send notification: {str(e)}")
