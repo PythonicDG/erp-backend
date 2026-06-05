@@ -1593,6 +1593,9 @@ class DashboardViewSet(viewsets.ViewSet):
         ecns_count = ECN.objects.count()
         ascns_count = ASCN.objects.count()
         
+        pending_ecns = ECN.objects.filter(status__in=['Submitted', 'Reviewed']).count()
+        pending_ascns = ASCN.objects.filter(status__in=['Submitted', 'Reviewed']).count()
+        
         completion_rate = (closed_projects / total_projects * 100) if total_projects > 0 else 0
         
         # 2. Project Type Distribution (Pie Chart)
@@ -1649,6 +1652,8 @@ class DashboardViewSet(viewsets.ViewSet):
                 'customers': customers_count,
                 'ecns': ecns_count,
                 'ascns': ascns_count,
+                'pending_ecns': pending_ecns,
+                'pending_ascns': pending_ascns,
                 'completion_rate': round(completion_rate, 2)
             },
             'charts': {
