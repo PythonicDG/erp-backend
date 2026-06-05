@@ -3,8 +3,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN, CustomerFeedback
-from .serializers import ProjectSerializer, CustomerMasterSerializer, StandardMasterSerializer, InspectionAuthorityMasterSerializer, ECNSerializer, CustomerFeedbackSerializer
+from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN, CustomerFeedback, ASCN
+from .serializers import ProjectSerializer, CustomerMasterSerializer, StandardMasterSerializer, InspectionAuthorityMasterSerializer, ECNSerializer, CustomerFeedbackSerializer, ASCNSerializer
 from .permissions import CanCreateProject
 from authentication.mixins import AuditLogMixin
 from authentication.permissions import IsAdmin
@@ -1591,6 +1591,7 @@ class DashboardViewSet(viewsets.ViewSet):
         pending_approval = projects_qs.filter(status='Pending Approval').count()
         customers_count = CustomerMaster.objects.count()
         ecns_count = ECN.objects.count()
+        ascns_count = ASCN.objects.count()
         
         completion_rate = (closed_projects / total_projects * 100) if total_projects > 0 else 0
         
@@ -1647,6 +1648,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 'pending': pending_approval,
                 'customers': customers_count,
                 'ecns': ecns_count,
+                'ascns': ascns_count,
                 'completion_rate': round(completion_rate, 2)
             },
             'charts': {
@@ -1723,6 +1725,53 @@ class ECNViewSet(AuditLogMixin, viewsets.ModelViewSet):
         date_val = self.request.query_params.get('date', None)
         if date_val:
             queryset = queryset.filter(ecn_date=date_val)
+            
+        return queryset
+
+
+class ASCNViewSet(AuditLogMixin, viewsets.ModelViewSet):
+    queryset = ASCN.objects.all().select_related('project', 'project__customer', 'initiator', 'reviewed_by', 'approved_by')
+    serializer_class = ASCNSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    
+    filterset_fields = ['status', 'project']
+    search_fields = ['ascn_number', 'project__name', 'project__customer__name', 'project__customer_name', 'raised_department']
+    ordering_fields = ['ascn_date', 'created_at', 'ascn_number']
+    ordering = ['-created_at']
+    audit_module = "ASCN"
+
+    def get_audit_target(self, instance):
+        return f"ASCN: {instance.ascn_number} for Project: {instance.project.name}"
+
+    def perform_create(self, serializer):
+        serializer.save(initiator=self.request.user)
+        super().perform_create(serializer)
+
+    def get_permissions(self):
+        if self.action == 'destroy':
+            return [IsAdmin()]
+        return [permissions.IsAuthenticated()]
+
+    def filter_queryset(self, queryset):
+        queryset = super().filter_queryset(queryset)
+        
+        # Filter by customer name (in case it is custom customer name string or fk relation name)
+        customer_name = self.request.query_params.get('customer_name', None)
+        if customer_name:
+            queryset = queryset.filter(
+                Q(project__customer__name__icontains=customer_name) | 
+                Q(project__customer_name__icontains=customer_name)
+            )
+            
+        # Filter by project name
+        project_name = self.request.query_params.get('project_name', None)
+        if project_name:
+            queryset = queryset.filter(project__name__icontains=project_name)
+
+        # Filter by date
+        date_val = self.request.query_params.get('date', None)
+        if date_val:
+            queryset = queryset.filter(ascn_date=date_val)
             
         return queryset
 

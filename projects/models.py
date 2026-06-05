@@ -434,3 +434,133 @@ class CustomerFeedback(models.Model):
         return f"Feedback for {self.project.pid} - Scheduled: {self.scheduled_date}"
 
 
+class ASCNStatus(models.TextChoices):
+    DRAFT = 'Draft', _('Draft')
+    SUBMITTED = 'Submitted', _('Submitted')
+    REVIEWED = 'Reviewed', _('Reviewed')
+    APPROVED = 'Approved', _('Approved')
+    REJECTED = 'Rejected', _('Rejected')
+
+
+class ASCN(models.Model):
+    ascn_number = models.CharField(max_length=50, unique=True, blank=True, verbose_name=_("ASCN Number"))
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='ascns',
+        verbose_name=_("Project")
+    )
+    raised_department = models.CharField(max_length=255, verbose_name=_("ASCN Raised Department"))
+    change_initiated_by = models.CharField(max_length=255, verbose_name=_("Change Initiated By"))
+    ascn_date = models.DateField(verbose_name=_("ASCN Date"))
+    old_revision_no = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("Old Revision No."))
+    old_revision_date = models.DateField(blank=True, null=True, verbose_name=_("Old Revision Date"))
+    new_revision = models.CharField(max_length=50, verbose_name=_("New Revision"))
+    
+    # Section 2: Details of Change (List of dicts: [{'sr_no': 1, 'description': '...', 'reason': '...'}])
+    details_of_change = models.JSONField(default=list, blank=True, verbose_name=_("Details of Change"))
+    attachments = models.JSONField(default=list, blank=True, verbose_name=_("Attachments"))
+    
+    # Section 3: Approvals
+    initiator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ascns_initiated',
+        verbose_name=_("Initiator")
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ascns_reviewed',
+        verbose_name=_("Reviewed By")
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ascns_approved',
+        verbose_name=_("Approved By")
+    )
+    
+    status = models.CharField(
+        max_length=20,
+        choices=ASCNStatus.choices,
+        default=ASCNStatus.DRAFT,
+        verbose_name=_("ASCN Status")
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = _("Application Software Change Note")
+        verbose_name_plural = _("Application Software Change Notes")
+
+    def __str__(self):
+        return f"{self.ascn_number or 'Draft ASCN'} - {self.project.name}"
+
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        old_status = None
+        if not is_new:
+            try:
+                old_status = ASCN.objects.get(pk=self.pk).status
+            except ASCN.DoesNotExist:
+                pass
+        
+        if not self.ascn_number:
+            admin_code = "1000"
+            if self.approved_by and getattr(self.approved_by, 'admin_code', None):
+                admin_code = self.approved_by.admin_code
+            
+            # Find the highest serial number from ASCNs starting with AS-
+            last_ascns = ASCN.objects.filter(ascn_number__startswith="AS-")
+            max_serial = 0
+            for a in last_ascns:
+                parts = a.ascn_number.split('-')
+                if len(parts) >= 3:
+                    try:
+                        num = int(parts[-1])
+                        if num > max_serial:
+                            max_serial = num
+                    except ValueError:
+                        pass
+            new_serial = max_serial + 1
+            self.ascn_number = f"AS-{admin_code}-{new_serial:03d}"
+            
+        super().save(*args, **kwargs)
+
+        # 1. Automatically change project status from 'Closed' to 'Open' on new ASCN creation
+        project = self.project
+        if is_new and project.status == 'Closed':
+            project.status = 'Open'
+            project.save(update_fields=['status'])
+
+        # 2. Automatically change project status back to 'Closed' once ASCN is approved
+        if self.status == ASCNStatus.APPROVED or self.status == 'Approved':
+            if project.status != 'Closed':
+                project.status = 'Closed'
+                project.save(update_fields=['status'])
+
+        # 3. Notification to approved_by admin when status becomes Submitted
+        if self.status == 'Submitted' and old_status != 'Submitted' and self.approved_by:
+            try:
+                from authentication.utils import notify_user
+                notify_user(
+                    recipient=self.approved_by,
+                    sender=self.initiator,
+                    title="ASCN Approval Request",
+                    message=f"ASCN {self.ascn_number} has been submitted and is pending your approval.",
+                    notification_type='approval_request',
+                    link=f"/ascn/{self.id}"
+                )
+            except Exception as e:
+                print(f"Failed to send notification: {str(e)}")
+
+

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN, CustomerFeedback
+from .models import Project, CustomerMaster, StandardMaster, InspectionAuthorityMaster, ECN, CustomerFeedback, ASCN
 from .services import ProjectService
 
 class CustomerMasterSerializer(serializers.ModelSerializer):
@@ -159,4 +159,62 @@ class CustomerFeedbackSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerFeedback
         fields = '__all__'
+
+
+class ASCNSerializer(serializers.ModelSerializer):
+    ascn_number = serializers.CharField(read_only=True)
+    customer_name = serializers.SerializerMethodField()
+    product_name = serializers.ReadOnlyField(source='project.name')
+    customer_part_no = serializers.ReadOnlyField(source='project.customer_part_no')
+    pcepl_part_no = serializers.ReadOnlyField(source='project.pcepl_part_no')
+    applicable_standard = serializers.ReadOnlyField(source='project.applicable_standard')
+    inspection_authority = serializers.ReadOnlyField(source='project.inspection_authority')
+    
+    # User full names for read
+    initiator_name = serializers.ReadOnlyField(source='initiator.full_name')
+    reviewed_by_name = serializers.ReadOnlyField(source='reviewed_by.full_name')
+    approved_by_name = serializers.ReadOnlyField(source='approved_by.full_name')
+    
+    # Project detail fields for list view
+    project_pid = serializers.ReadOnlyField(source='project.pid')
+    project_name = serializers.ReadOnlyField(source='project.name')
+    
+    class Meta:
+        model = ASCN
+        fields = [
+            'id', 'ascn_number', 'project', 'project_pid', 'project_name',
+            'customer_name', 'product_name', 'customer_part_no', 'pcepl_part_no',
+            'applicable_standard', 'inspection_authority', 'raised_department',
+            'change_initiated_by', 'ascn_date', 'old_revision_no', 'old_revision_date',
+            'new_revision', 'details_of_change', 'initiator', 'initiator_name',
+            'reviewed_by', 'reviewed_by_name', 'approved_by', 'approved_by_name',
+            'status', 'attachments', 'created_at', 'updated_at'
+        ]
+        
+    def get_customer_name(self, obj):
+        if obj.project:
+            if obj.project.customer:
+                return obj.project.customer.name
+            return obj.project.customer_name or ''
+        return ''
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        if request and request.user:
+            new_status = attrs.get('status')
+            
+            # 1. Enforce that approved_by is set when ASCN status transitions to Submitted
+            if new_status == 'Submitted':
+                approved_by = attrs.get('approved_by') or (self.instance.approved_by if self.instance else None)
+                if not approved_by:
+                    raise serializers.ValidationError({"approved_by": "An ASCN must have an assigned approver when submitted."})
+            
+            # 2. Restrict approval/rejection only to the selected approved_by admin
+            if new_status in ['Approved', 'Rejected']:
+                approved_by = attrs.get('approved_by') or (self.instance.approved_by if self.instance else None)
+                if not approved_by:
+                    raise serializers.ValidationError("An ASCN must have an assigned approver to be approved or rejected.")
+                if request.user != approved_by:
+                    raise serializers.ValidationError("Only the selected 'Approved By' administrator can approve or reject this ASCN.")
+        return attrs
 
