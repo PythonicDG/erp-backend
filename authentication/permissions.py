@@ -8,7 +8,7 @@ class IsAdmin(BasePermission):
         return (
             request.user
             and request.user.is_authenticated
-            and request.user.role == UserRole.ADMIN
+            and request.user.role in [UserRole.ADMIN, UserRole.SUPERADMIN]
         )
 
 
@@ -38,14 +38,14 @@ class IsAdminOrSupervisor(BasePermission):
         return (
             request.user
             and request.user.is_authenticated
-            and request.user.role in [UserRole.ADMIN, UserRole.SUPERVISOR]
+            and request.user.role in [UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.SUPERVISOR]
         )
 
 
 class IsOwnerOrAdmin(BasePermission):
     """Allows access to the object owner or admin users."""
     def has_object_permission(self, request, view, obj):
-        if request.user.role == UserRole.ADMIN:
+        if request.user.role in [UserRole.ADMIN, UserRole.SUPERADMIN]:
             return True
         return obj.id == request.user.id
 

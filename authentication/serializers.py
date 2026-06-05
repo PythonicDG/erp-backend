@@ -90,11 +90,21 @@ class TeamMemberSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'employee_id', 'created_at', 'updated_at']
 
     def create(self, validated_data):
+        role = validated_data.get('role')
+        if role == 'SUPERADMIN':
+            raise serializers.ValidationError({"role": "The SuperAdmin role can only be assigned through the Django admin panel."})
         password = validated_data.pop('password', 'ERP12345') # Default temp password
         user = User.objects.create_user(password=password, **validated_data)
         return user
 
     def update(self, instance, validated_data):
+        if instance.role == 'SUPERADMIN':
+            raise serializers.ValidationError("SuperAdmin details can only be changed through the Django admin panel.")
+        
+        role = validated_data.get('role')
+        if role == 'SUPERADMIN' and instance.role != 'SUPERADMIN':
+            raise serializers.ValidationError({"role": "The SuperAdmin role can only be assigned through the Django admin panel."})
+
         password = validated_data.pop('password', None)
         if password:
             instance.set_password(password)
