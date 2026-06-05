@@ -54,6 +54,7 @@ class UserSerializer(serializers.ModelSerializer):
             'role',
             'is_active',
             'remarks',
+            'allowed_tabs',
             'created_at',
             'updated_at',
         ]
@@ -80,6 +81,7 @@ class TeamMemberSerializer(serializers.ModelSerializer):
             'is_active',
             'remarks',
             'password',
+            'allowed_tabs',
             'created_at',
             'updated_at',
         ]
