@@ -319,27 +319,32 @@ class ECN(models.Model):
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
+        old_status = None
+        if not is_new:
+            try:
+                old_status = ECN.objects.get(pk=self.pk).status
+            except ECN.DoesNotExist:
+                pass
         
         if not self.ecn_number:
-            from django.utils import timezone
-            date_val = self.ecn_date or timezone.now().date()
-            year = date_val.strftime('%y')
-            month = date_val.strftime('%m')
-            prefix = f"ECN/{year}/{month}/"
+            admin_code = "1000"
+            if self.approved_by and getattr(self.approved_by, 'admin_code', None):
+                admin_code = self.approved_by.admin_code
             
-            # Find the last ECN that starts with this prefix
-            last_ecn = ECN.objects.filter(ecn_number__startswith=prefix).order_by('ecn_number').last()
-            
-            if last_ecn:
-                try:
-                    last_serial = int(last_ecn.ecn_number.split('/')[-1])
-                    new_serial = last_serial + 1
-                except (ValueError, IndexError):
-                    new_serial = 1
-            else:
-                new_serial = 1
-                
-            self.ecn_number = f"{prefix}{new_serial:03d}"
+            # Find the highest serial number from ECNs starting with EC-
+            last_ecns = ECN.objects.filter(ecn_number__startswith="EC-")
+            max_serial = 0
+            for e in last_ecns:
+                parts = e.ecn_number.split('-')
+                if len(parts) >= 3:
+                    try:
+                        num = int(parts[-1])
+                        if num > max_serial:
+                            max_serial = num
+                    except ValueError:
+                        pass
+            new_serial = max_serial + 1
+            self.ecn_number = f"EC-{admin_code}-{new_serial:03d}"
             
         super().save(*args, **kwargs)
 
@@ -354,6 +359,21 @@ class ECN(models.Model):
             if project.status != 'Closed':
                 project.status = 'Closed'
                 project.save(update_fields=['status'])
+
+        # 3. Notification to approved_by admin when status becomes Submitted
+        if self.status == 'Submitted' and old_status != 'Submitted' and self.approved_by:
+            try:
+                from authentication.utils import notify_user
+                notify_user(
+                    recipient=self.approved_by,
+                    sender=self.initiator,
+                    title="ECN Approval Request",
+                    message=f"ECN {self.ecn_number} has been submitted and is pending your approval.",
+                    notification_type='approval_request',
+                    link=f"/admin/ecn/{self.id}"
+                )
+            except Exception as e:
+                print(f"Failed to send notification: {str(e)}")
 
 
 class CustomerFeedback(models.Model):

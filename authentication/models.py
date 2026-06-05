@@ -57,6 +57,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     allowed_tabs = models.JSONField(default=list, blank=True)
+    admin_code = models.CharField(max_length=20, blank=True, null=True, unique=True, verbose_name='Admin Code')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -93,6 +94,21 @@ class User(AbstractBaseUser, PermissionsMixin):
                     self.employee_id = candidate_id
                     break
                 base_id += 1
+
+        if self.role == UserRole.ADMIN and not self.admin_code:
+            import re
+            max_code = 1000
+            for u in User.objects.filter(role=UserRole.ADMIN).exclude(admin_code__isnull=True).exclude(admin_code=""):
+                match = re.search(r'\d+', u.admin_code)
+                if match:
+                    try:
+                        val = int(match.group())
+                        if val > max_code:
+                            max_code = val
+                    except ValueError:
+                        pass
+            self.admin_code = str(max_code + 1)
+
         super().save(*args, **kwargs)
 
     def __str__(self):

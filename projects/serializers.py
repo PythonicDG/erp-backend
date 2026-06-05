@@ -131,6 +131,26 @@ class ECNSerializer(serializers.ModelSerializer):
             return obj.project.customer_name or ''
         return ''
 
+    def validate(self, attrs):
+        request = self.context.get('request')
+        if request and request.user:
+            new_status = attrs.get('status')
+            
+            # 1. Enforce that approved_by is set when ECN status transitions to Submitted
+            if new_status == 'Submitted':
+                approved_by = attrs.get('approved_by') or (self.instance.approved_by if self.instance else None)
+                if not approved_by:
+                    raise serializers.ValidationError({"approved_by": "An ECN must have an assigned approver when submitted."})
+            
+            # 2. Restrict approval/rejection only to the selected approved_by admin
+            if new_status in ['Approved', 'Rejected']:
+                approved_by = attrs.get('approved_by') or (self.instance.approved_by if self.instance else None)
+                if not approved_by:
+                    raise serializers.ValidationError("An ECN must have an assigned approver to be approved or rejected.")
+                if request.user != approved_by:
+                    raise serializers.ValidationError("Only the selected 'Approved By' administrator can approve or reject this ECN.")
+        return attrs
+
 
 class CustomerFeedbackSerializer(serializers.ModelSerializer):
     project_pid = serializers.ReadOnlyField(source='project.pid')
