@@ -43,6 +43,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     id = models.BigAutoField(primary_key=True)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
+    username = models.CharField(max_length=150, unique=True, blank=True, null=True, db_index=True)
     email = models.EmailField(unique=True, db_index=True)
     phone = models.CharField(max_length=20, blank=True, default='')
     employee_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
@@ -70,6 +71,17 @@ class User(AbstractBaseUser, PermissionsMixin):
         verbose_name_plural = 'Users'
 
     def save(self, *args, **kwargs):
+        if not self.username:
+            # Generate default username from email
+            if self.email:
+                base_username = self.email.split('@')[0]
+                candidate_username = base_username
+                counter = 1
+                while User.objects.filter(username=candidate_username).exclude(pk=self.pk).exists():
+                    candidate_username = f"{base_username}{counter}"
+                    counter += 1
+                self.username = candidate_username
+        
         if not self.employee_id:
             # Generate auto employee ID: EMP-0001
             last_user = User.objects.order_by('-id').first()
@@ -83,7 +95,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f'{self.first_name} {self.last_name} ({self.email})'
+        return f'{self.first_name} {self.last_name} ({self.username or self.email})'
 
     @property
     def full_name(self):

@@ -103,6 +103,12 @@ DATABASES = {
 # Custom User Model
 AUTH_USER_MODEL = 'authentication.User'
 
+# Authentication Backends
+AUTHENTICATION_BACKENDS = [
+    'authentication.backends.EmailOrUsernameModelBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 # REST Framework Configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [

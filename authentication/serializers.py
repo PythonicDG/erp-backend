@@ -7,20 +7,26 @@ from .system_models import SystemConfiguration, CompanyProfile, AuditLog
 
 class LoginSerializer(serializers.Serializer):
     """Serializer for user login."""
-    email = serializers.EmailField(required=True)
+    username_or_email = serializers.CharField(required=True)
     password = serializers.CharField(required=True, write_only=True)
 
     def validate(self, attrs):
-        email = attrs.get('email', '').lower().strip()
+        username_or_email = attrs.get('username_or_email', '').strip()
+        if '@' in username_or_email:
+            username_or_email = username_or_email.lower()
         password = attrs.get('password')
 
-        if not email or not password:
-            raise serializers.ValidationError('Both email and password are required.')
+        if not username_or_email or not password:
+            raise serializers.ValidationError('Both username/email and password are required.')
 
-        user = authenticate(request=self.context.get('request'), email=email, password=password)
+        user = authenticate(
+            request=self.context.get('request'),
+            username=username_or_email,
+            password=password
+        )
 
         if not user:
-            raise serializers.ValidationError('Invalid email or password.')
+            raise serializers.ValidationError('Invalid username/email or password.')
 
         if not user.is_active:
             raise serializers.ValidationError('This account has been deactivated.')
@@ -41,6 +47,7 @@ class UserSerializer(serializers.ModelSerializer):
             'first_name',
             'last_name',
             'full_name',
+            'username',
             'email',
             'phone',
             'department',
@@ -65,6 +72,7 @@ class TeamMemberSerializer(serializers.ModelSerializer):
             'first_name',
             'last_name',
             'full_name',
+            'username',
             'email',
             'phone',
             'department',
