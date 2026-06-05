@@ -94,6 +94,24 @@ class WorkflowService:
         """
         Handles form submission for a stage.
         """
+        # Sync PCEPL Part Number to the Project model if present in submission data
+        from .models import FormField
+        field = FormField.objects.filter(
+            stage_template=stage_instance.template,
+            label__icontains="PCEPL Part Number"
+        ).first()
+        if not field:
+            field = FormField.objects.filter(
+                stage_template=stage_instance.template,
+                label__icontains="PCEPL Part No"
+            ).first()
+        if field and data and field.name in data:
+            val = data.get(field.name)
+            if val:
+                project = stage_instance.project
+                project.pcepl_part_no = val
+                project.save()
+
         submission, created = StageSubmission.objects.update_or_create(
             stage_instance=stage_instance,
             status=StageSubmission.SubmissionStatus.DRAFT,

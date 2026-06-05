@@ -93,6 +93,37 @@ class ProjectSerializer(serializers.ModelSerializer):
         
         return project
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        # Fetch dynamic PCEPL Part No from the 3rd stage if available
+        from workflow.models import StageInstance, FormField
+        
+        stage_inst = instance.workflow_stages.filter(order=3).first()
+        if not stage_inst:
+            stage_inst = instance.workflow_stages.filter(template__order=3).first()
+            
+        pcepl_val = instance.pcepl_part_no or '-'
+        if stage_inst:
+            field = FormField.objects.filter(
+                stage_template=stage_inst.template,
+                label__icontains="PCEPL Part Number"
+            ).first()
+            if not field:
+                field = FormField.objects.filter(
+                    stage_template=stage_inst.template,
+                    label__icontains="PCEPL Part No"
+                ).first()
+                
+            if field:
+                sub = stage_inst.submissions.exclude(status='Draft').last()
+                if not sub:
+                    sub = stage_inst.submissions.last()
+                if sub and sub.data:
+                    pcepl_val = sub.data.get(field.name) or instance.pcepl_part_no or '-'
+                    
+        representation['pcepl_part_no'] = pcepl_val
+        return representation
+
 
 class ECNSerializer(serializers.ModelSerializer):
     ecn_number = serializers.CharField(read_only=True)
