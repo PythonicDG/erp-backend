@@ -36,6 +36,15 @@ class TeamViewSet(AuditLogMixin, viewsets.ModelViewSet):
     def get_audit_target(self, instance):
         return f"{instance.full_name} ({instance.employee_id})"
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.role == 'SUPERADMIN':
+            return Response(
+                {"detail": "SuperAdmin accounts can only be deleted through the Django admin panel."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().destroy(request, *args, **kwargs)
+
 
 class LoginView(GenericAPIView):
     """
@@ -218,7 +227,7 @@ class CompanyProfileView(GenericAPIView):
         return Response(serializer.data)
 
     def patch(self, request):
-        if request.user.role != 'ADMIN':
+        if request.user.role not in ['ADMIN', 'SUPERADMIN']:
             return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
         profile = CompanyProfile.objects.first()
         serializer = self.get_serializer(profile, data=request.data, partial=True)

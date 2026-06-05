@@ -18,4 +18,4 @@ class IsAdminUser(permissions.BasePermission):
     Permission to allow only Admin role users.
     """
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.role == 'ADMIN'
+        return request.user and request.user.is_authenticated and request.user.role in ['ADMIN', 'SUPERADMIN']
