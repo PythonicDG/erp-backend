@@ -149,7 +149,7 @@ class WorkflowService:
             )
 
             # Notify all Supervisors and Admins
-            recipients = list(User.objects.filter(role__in=['ADMIN', 'SUPERVISOR']))
+            recipients = list(User.objects.filter(role__in=['SUPERADMIN', 'ADMIN', 'SUPERVISOR']))
             if stage_instance.project.supervisor and stage_instance.project.supervisor not in recipients:
                 recipients.append(stage_instance.project.supervisor)
 

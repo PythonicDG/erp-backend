@@ -1805,7 +1805,7 @@ class CustomerFeedbackViewSet(AuditLogMixin, viewsets.ModelViewSet):
                 feedback.save(update_fields=['status'])
                 
                 # Notify supervisors/admins
-                recipients = list(User.objects.filter(role__in=['ADMIN', 'SUPERVISOR']))
+                recipients = list(User.objects.filter(role__in=['SUPERADMIN', 'ADMIN', 'SUPERVISOR']))
                 if feedback.project.supervisor and feedback.project.supervisor not in recipients:
                     recipients.append(feedback.project.supervisor)
                 for recipient in recipients:
@@ -1870,7 +1870,7 @@ class CustomerFeedbackViewSet(AuditLogMixin, viewsets.ModelViewSet):
         # Notify immediately
         from authentication.models import User
         from authentication.utils import notify_user
-        recipients = list(User.objects.filter(role__in=['ADMIN', 'SUPERVISOR']))
+        recipients = list(User.objects.filter(role__in=['SUPERADMIN', 'ADMIN', 'SUPERVISOR']))
         if project.supervisor and project.supervisor not in recipients:
             recipients.append(project.supervisor)
         for recipient in recipients:
