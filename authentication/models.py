@@ -112,6 +112,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         if not self.admin_code or self.admin_code == "":
             self.admin_code = None
 
+        if self.role == UserRole.EMPLOYEE and self.allowed_tabs:
+            self.allowed_tabs = [t for t in self.allowed_tabs if t not in ['settings', 'team']]
+
         super().save(*args, **kwargs)
 
     def __str__(self):
