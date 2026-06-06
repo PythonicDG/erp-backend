@@ -109,6 +109,9 @@ class User(AbstractBaseUser, PermissionsMixin):
                         pass
             self.admin_code = str(max_code + 1)
 
+        if not self.admin_code or self.admin_code == "":
+            self.admin_code = None
+
         super().save(*args, **kwargs)
 
     def __str__(self):
