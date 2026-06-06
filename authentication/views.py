@@ -330,6 +330,17 @@ class DatabaseRestoreView(GenericAPIView):
 
             with transaction.atomic():
                 call_command('loaddata', temp_file_path)
+                
+                # Automatically fix any incorrect Closed project statuses in restored data
+                from projects.models import Project
+                from workflow.models import StageInstance
+                for project in Project.objects.filter(status='Closed'):
+                    instances = StageInstance.objects.filter(project=project)
+                    if instances.exists():
+                        approved_count = instances.filter(status='Approved').count()
+                        if approved_count < instances.count():
+                            project.status = 'In Progress' if approved_count > 0 else 'Open'
+                            project.save(update_fields=['status'])
 
             from .utils import log_action
             log_action(
@@ -338,7 +349,7 @@ class DatabaseRestoreView(GenericAPIView):
                 target="Database",
                 module="Settings"
             )
-            return Response({"success": True, "message": "Database restored successfully"})
+            return Response({"success": True, "message": "Database restored and sanitized successfully"})
         except Exception as e:
             return Response({"error": f"Failed to restore database: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

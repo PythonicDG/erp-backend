@@ -123,6 +123,17 @@ class Project(models.Model):
             self.applicable_standard = self.standard.standard_number
         if self.inspection_authority_fk:
             self.inspection_authority = self.inspection_authority_fk.name
+        if self.status == 'Closed':
+            try:
+                from workflow.models import StageInstance
+                instances = StageInstance.objects.filter(project=self)
+                if instances.exists():
+                    approved_count = instances.filter(status='Approved').count()
+                    if approved_count < instances.count():
+                        self.status = 'In Progress' if approved_count > 0 else 'Open'
+            except Exception:
+                pass
+
         super().save(*args, **kwargs)
         
         if self.status == 'Closed':
@@ -354,9 +365,12 @@ class ECN(models.Model):
             project.status = 'Open'
             project.save(update_fields=['status'])
 
-        # 2. Automatically change project status back to 'Closed' once ECN is approved
+        # 2. Automatically change project status back to 'Closed' once ECN is approved, only if all stages are completed
         if self.status == ECNStatus.APPROVED or self.status == 'Approved':
-            if project.status != 'Closed':
+            from workflow.models import StageInstance
+            stages = StageInstance.objects.filter(project=project)
+            all_approved = stages.exists() and all(s.status == StageInstance.Status.APPROVED for s in stages)
+            if all_approved and project.status != 'Closed':
                 project.status = 'Closed'
                 project.save(update_fields=['status'])
 
@@ -542,9 +556,12 @@ class ASCN(models.Model):
             project.status = 'Open'
             project.save(update_fields=['status'])
 
-        # 2. Automatically change project status back to 'Closed' once ASCN is approved
+        # 2. Automatically change project status back to 'Closed' once ASCN is approved, only if all stages are completed
         if self.status == ASCNStatus.APPROVED or self.status == 'Approved':
-            if project.status != 'Closed':
+            from workflow.models import StageInstance
+            stages = StageInstance.objects.filter(project=project)
+            all_approved = stages.exists() and all(s.status == StageInstance.Status.APPROVED for s in stages)
+            if all_approved and project.status != 'Closed':
                 project.status = 'Closed'
                 project.save(update_fields=['status'])
 
