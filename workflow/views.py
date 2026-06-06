@@ -123,7 +123,7 @@ class StageInstanceViewSet(viewsets.ReadOnlyModelViewSet):
         stage_instance = self.get_object()
         remarks = request.data.get('remarks')
         
-        if request.user.role not in ['ADMIN', 'SUPERVISOR']:
+        if request.user.role not in ['ADMIN', 'SUPERVISOR', 'SUPERADMIN']:
              return Response({"error": "Only supervisors or admins can approve"}, status=status.HTTP_403_FORBIDDEN)
              
         WorkflowService.approve_stage(stage_instance, request.user, remarks)
@@ -137,7 +137,7 @@ class StageInstanceViewSet(viewsets.ReadOnlyModelViewSet):
         if not remarks:
             return Response({"error": "Remarks are required for rejection"}, status=status.HTTP_400_BAD_REQUEST)
             
-        if request.user.role not in ['ADMIN', 'SUPERVISOR']:
+        if request.user.role not in ['ADMIN', 'SUPERVISOR', 'SUPERADMIN']:
              return Response({"error": "Only supervisors or admins can reject"}, status=status.HTTP_403_FORBIDDEN)
              
         WorkflowService.reject_stage(stage_instance, request.user, remarks)

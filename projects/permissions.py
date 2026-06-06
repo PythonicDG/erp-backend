@@ -10,7 +10,7 @@ class CanCreateProject(permissions.BasePermission):
         
         # Check roles (Assuming roles are stored in request.user.role)
         # Roles in this system: ADMIN, SUPERVISOR, EMPLOYEE
-        allowed_roles = ['ADMIN', 'SUPERVISOR', 'EMPLOYEE']
+        allowed_roles = ['ADMIN', 'SUPERVISOR', 'EMPLOYEE', 'SUPERADMIN']
         return request.user.role in allowed_roles
 
 class IsAdminUser(permissions.BasePermission):
